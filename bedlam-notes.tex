@@ -1,0 +1,535 @@
+\documentclass[12pt,a4]{article}
+\usepackage[latin1]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[letterpaper,colorlinks,breaklinks,backref]{hyperref}
+
+\newcommand{\metax}[1]{meta${}^{#1}$}
+\newcommand{\metan}{\metax{n}}
+
+\begin{document}
+\title{Notes on solving the Bedlam cube}
+\author{Faré \copyright 2001}
+
+\maketitle
+
+\section{The problem}
+
+\subsection{The Cube}
+
+The problem consists in building
+a $4 \times 4 \times 4$ 3D cube from 13 pieces.
+The shape of the pieces are given, with 12 pieces being made of 5 little cubes,
+and one piece being made of only 4 little cubes.
+
+Although originally submitted to me as a "soma cube" by Rik Rose
+\url{http://rikrose.net/soma/},
+the problem really is a Bedlam cube \url{http://www.bedlamcube.com/}
+as invented by Bruce Bedlam,
+and there is already at least one web page
+\url{http://ch.twi.tudelft.nl/~sidney/puzzles/}
+where a solution for it is given -- or rather,
+all the $19,186$ solutions.
+
+Note: the original $3 \times 3 \times 3$ soma cube was invented Piet Heine,
+\url{http://home8.inet.tele.dk/bundgard/SOMA/SOMA.HTM} and the name was
+indeed chosen from the name of the perfect drug in Aldous Huxley's
+``Brave New World'' \url{http://www.huxley.net/bnw/}
+
+\subsection{The Challenge}
+
+Either one solution is wanted, as fast as possible,
+or all solutions are wanted, as fast as possible.
+Solutions should not usually include similar configurations obtained
+by rotating the cube, or rotating a piece in a way that preserves
+the identities of the little cubes it fills.
+I've decided that a reasonable interpretation of the problem
+was to find all solutions, up to symmetry
+(without repeating symmetric versions of a same solution),
+as fast as possible.
+Solutions can be printed as listing of which piece is placed where
+(rotation and translation involved), or as a cubic array mapping
+which little cube is filled by which piece.
+
+An ``optimized'' program would just take the list of solutions and dump it.
+Why is it considered as cheating? Because it requires prior knowledge of
+the solutions. So what? Especially when we're considering an input-less
+deterministic program: it's a mathematical problem the solution is immanent
+in the universe. An approach to pointing down the difference could be
+one of Kolmogorov complexity: considering the intrinsic complexity
+for a human brain to solve the problem, there is no way it can be solved
+but by some external artefact (computer program, godly message, etc.),
+so we can trace any correct reply to such artefact, and consider as a
+valid a reply by the author of such artefact. Then we can recurse the
+problem by questioning what's an author, but let's not do it here and now.
+
+\subsection{Annoying Complication}
+
+Should only be considered acceptable solutions that can be
+physically constructed by adding pieces one after the other.
+I think the simplicity of the actual pieces of this puzzle
+makes it the case that all solutions are constructible.
+
+However, until a proof or disproof of such conjecture is given,
+or if we are to write a program that work in more situations,
+we need to test the following:
+
+\begin{itemize}
+\item
+ In a combination of pieces, we call reducible the pieces that
+ can be removed by just pulling them in one of the 6 directions:
+ there is no obstacle to them in that direction
+\item
+ If by removing reducible pieces, and starting again,
+ we can reduce the combination to an empty one,
+ then the solution was acceptable;
+ if not, print specially the reduced irreducible combination
+ (that could themselves be split in several groups
+ until irreducible groups are reached).
+\end{itemize}
+
+\section{The Solver}
+
+\subsection{My Approach}
+
+I didn't have any practical experience with CL before I wrote this;
+the very purpose of this was as an exercise to be keener in CL.
+At first, I've tried to write things in such a way as to keep a generic parts
+as a reusable skeleton that can be copied and modified.
+Later on, I tried to bum the program.
+
+\subsection{What I Originally Did}
+
+Early on, I decided to breaking the symmetry of the search,
+which was a predictable win of over an order of magnitude in search time
+at the expense of some non-negligeable work at development time.
+If you consider that multiple isometric solutions must not be output,
+then it was a good thing; if you're only interested in getting one solution,
+or all, even isometric ones, or in not wasting too much time,
+then it was a bad move; otherwise, it was a good thing.
+Retrospectively, it's a great thing for an automated system to do,
+or for a semi-automated system to allow to specify declaratively,
+but not forcibly worth doing manually.
+
+Early on, I decided to precompute rotations, translations, etc.,
+which is also a good thing, and should be doable by simple declaration.
+Some of these precomputations happened to be more expensive.
+
+I spent a lot of time trying to bum the search speed for the initial
+stupid search strategy (for each cube, try to fit a piece in it), then
+a slightly improved one (for each piece, try all precomputed variants).
+
+Later on did I opt for forward constraint propagation:
+for each shape, restrict further sets of shapes.
+Because the encoding of constraint propagation made it natural,
+I added static strategy choice of pieces to insert.
+
+Since this still was not enough, I added dynamic strategic choice.
+I also added some program profiling,
+and concluded my current search was 1.e10 times too slow
+(1.e8 in optimized compilation),
+which clearly indicates that the algorithm's global search tree is too large,
+notwithstanding  any low-level optimization.
+Doing this earlier could have saved a lot of time.
+
+Nevertheless, after some forty minutes
+(out of an estimated approximate total of 6 months to 1 year),
+three solutions were found. This reduced my interest in soma.
+
+I nevertheless added sequential search restart capability,
+so that incremental efforts in optimization
+supposing a same search tree could help cover the search space:
+either low-level optimization or parallelization.
+
+After some ten hours or so of cumulated search
+(with minor implementation tweaks, including bug-fixes,
+and restarting from previous checkpoint),
+exploring an estimated 3.e-3 of the search space
+(6.5e7 attempts out of an estimated 2.e11 to go)
+yielded 364 solutions, out of an estimated total of 1.e5 solutions.
+
+I considered my search algorithm as dumb, but as good as I could do,
+and intended to use various low-level techniques
+(removing CONSing, boxing of bitmasks, and parallelizing)
+to bring the whole search thing down to a few hours.
+
+\subsection{A better Algorithm}
+
+After kind of solving the problem, albeit in an unsatisfactory way,
+I asked to see the first solution submitted to Rik Rose,
+that was written in C by ``some guy from irc.bsdunix.net''.
+
+Although this guy used none of the representation optimizations I used,
+and did not do forward constraint propagation, he was thousands of time
+faster than I: because he had found a fundamentally better search algorithm,
+in a way that I had failed to see, which demonstrates that the author
+had a deep understanding of the problem, and that despite using a low-level
+language, he hadn't been lured into focusing on irrelevant low-level points.
+
+His search solution uses a non-trivial property of the problem
+to simplify its search, that I hadn't used up to then,
+and reduces his search considerably,
+by eliminating the need to consider arbitrary translations.
+I'm ashamed that I almost found that trick myself, but that I missed it
+completely after I precomputed translations and went into narrowing bitmasks,
+which hid this important geometric property, that
+the lexicographic order of the bitmap is preserved by translation:
+i.e. if a shape made of little cubes is translated,
+the relative lexicographic order of these cubes is preserved.
+Thus, if all previous cubes (in the lexicographic order) have been filled,
+the only cube that can fill the current one is the lexicographically
+smallest in the shape of the translated rotated piece.
+Hence, the right search strategy is to take each cube as a spot in order,
+and try fill it with the least cube of every possible shape
+of every possible piece. It is still possible to use all my optimizations,
+yet this one optimization beat all of mine --- choosing the right search tree.
+
+\section{Analysis Of My Attempts}
+
+\subsection{My failed attempts}
+
+I wasted lots of time not finding a proper solution.
+
+My mistakes, from the most superficial to the deepest, were
+\begin{itemize}
+\item
+lots of typos that a proper development environment could have easily
+detected, and that CMUCL was much slower to report than, e.g. OCAML would,
+and that a better development environment could have avoided altogether
+by a closer interaction between edition and semantic interpretation.
+\item
+failure to propagate constraints correctly when transforming the program,
+that a static type-checker could have detected, and that that a dynamic
+static typing environment could have mostly propagated automatically.
+\item
+focusing on low-level representational problems,
+because I distrusted the speed of my implementation (which indeed
+sucked at times, and did not provide useful feedback on time usage),
+instead of focusing on better algorithmic choices.
+-- I clearly need detox from C thinking habits.
+\end{itemize}
+
+\subsection{Other optimization paths to consider}
+
+\begin{itemize}
+\item
+LISP compilers don't support them, and I'm told 64-bit integers
+ are very slow with GCC, anyway, so use 32-bit integers instead.
+\item
+Instead of hand-translating to C, either use ThinLisp,
+ or translate to Scheme and use Stalin.
+\item
+when a solution is found, see if it can be reduced in groups of pieces
+ some non-trivially groups of which are globally stable by symmetry.
+ This allows to simplify the presentation and explore the structure
+ of the solution set. However, it is yet unclear to me if it could help
+ eliminate part of the search tree: dynamically introducing new 'metapieces'
+ could accelerate the initial finding of more solutions, but might actually
+ slow down the overall search, since most of the time is spent eliminating
+ bad combinations, not finding good ones.
+\item
+more interesting would be to have some better analysis of the geometric
+ interactions between pieces than provides the current stubborn bitmap.
+ A clever such analysis, if possible, could provide a many-fold speed
+ improvement in search speed by detecting dead sub-trees early on, in
+ combination with an appropriate search strategy.
+
+\item
+It is ugly because of all the bumming tricks it uses,
+ that make it quite difficult to change the structure of the program
+ or reuse parts of it. Which is not a problem at all in such a small
+ and simple program, where no sharing, extension, etc., is ever needed.
+\item
+For instance, the use of ad-hoc single-linked structures with manual
+ management makes perfect sense in presence of linear structures,
+ but is unusable in programs with sharing.
+ In LISP, you don't have that and cannot have that, because your program
+ uses general higher-level tools, that your compiler cannot specialize
+ because of the ability to dynamically modify things (a superoptimizer
+ for static programs could, but then, it's too late, because you don't
+ design your programs with that in mind).
+ I suppose a compiler for Clean, however, could optimize all those things,
+ thanks to its linear type-system that can detect and automatically use
+ these optimization opportunities, while keeping the program in a nice
+ high-level style that allows to easily make high-level changes to it,
+ and to detect mistakes in breaking linearity invariants.
+ I'm sure a solution in Clean would be the shortest, fastest and cleanest
+ of all -- PLUS, the Clean implementation can already and readily
+ take advantage of concurrence!
+
+\end{itemize}
+
+
+Optimizations intended after reading this solution:
+\begin{itemize}
+\item
+First, and foremost, do use the same search tree as that guy!
+\item
+ Keep doing forward constraint propagation, keeping for each live piece
+  and all live spots (sorted in opposite order) the list of live positions
+  of this piece where this spot is the smallest-ranked.
+\item
+ It might pay lot to be big-endian in such matters, so as to sort shapes
+  trivially in row-major order. Also, an bummed loops will only handle
+  the lowest 32 bits past the first half of the tree. Similar bumming
+  could special case skipping over the test for shapes with high low-spot
+  until needed, but since this complication would only help at the first
+  steps of the search, it's a lot of complication for little. If there
+  had been are lots of significant inhomogeneity in treatment, shapes
+  could have be represented as a vector of bummed functions that do the
+  right thing.
+\end{itemize}
+
+Expected gains from various other optimization (log10-scale speed improvement)
+\begin{itemize}
+\item
++1.6 from using a better algorithm
+\item
++0.6 from removing consing altogether,
+  allocating search lists in a proper arena
+\item
++0.7 by using (unsigned-byte 32) everywhere instead of fixnums and bignums,
+ and doing away with typechecking altogether.
+\item
++0.1 from translating to C with ThinLisp or Stalin, doing away with
+ any remnants of low-level inefficiency AND allowing to distribute
+ computations over many machines...
+\item
++0.6 from parallelization on many machines available to me
+ (dumping some 3.e5-odd specialized C programs to be scheduled
+ on a wide distributed system, by specializing after 3 levels of search)
+These could bring the whole tree search into human-scaled times,
+a few hours.
+\end{itemize}
+
+From my many attemps, some lessons can be drawn about
+a high-level development environment for a declarative language,
+that could help automate my implementation efforts:
+\begin{itemize}
+\item
+The choice of data-structure representation can be automated
+ by considering the actual operation pattern on which to amortize,
+ or for which to provide guarantees.
+\item
+ for sets, I used lists, simple or sorted, bit-vectors
+  (that sucked big-time under CMUCL when trying to sort them),
+  bignums-as-bitmaps (C could use 64-bit integers directly).
+  Considering mostly total map/reduce access pattern,
+  I didn't use hashes or trees.
+\item
+I transformed the evolving list of the *solution-path* (now
+ *search-path-FOO*) into a constant vector only a partial filling of which
+ is meaningful -- that is, I manually gave a preallocated arena
+ for an object with predictable allocation pattern,
+ changing the low-level access protocol at the same time.
+\item
+The above transformation worked because the occasional sharing of
+ the *solution-path* in *solutions* was only interesting up to copy,
+ and the rare copy was very affordable, so sharing could be done without.
+\item
+In optimized brute-force searches, where every bit of efficiency counts,
+ and an accumulated object is changed incrementally, it is sometimes good,
+ sometimes bad, to recover the object by decremental change rather than by
+ save and restore. I did this for the cube when it was still a large array,
+ rather than a bit vector.
+\item
+I changed the cube from an array of piece ids to a bitmask,
+ keeping the ids only in the solution path, since they were not used
+ in the critical search path, only at success time.
+\item
+Because it induced pervasive changes everywhere, I didn't try
+ changing datastructure representation to accomodate with index optimization:
+ restructure arrays and sequences so that index-intensive search be most
+ effective -- stubbornly decrementing from max to 0, instead of going
+ through extra indirections and checking.
+\item
+More generally, it's a PITA to maintain manually several different
+ low-level representations of the 'same' object at different times,
+ because programming languages mostly insist on having a one canonical
+ representation for every object.
+\item
+Another room for improvement is in cacheing expensive precomputations
+ across modifications of the program, which an automated help should prove
+ is correct by tracking dependencies (providing options to keep marked
+ versions, compare them to new ones, etc.).
+ LISP allows easy read/write of things, as long as they do not
+ contain code per se (which can be worked around by metaprogramming).
+\item
+Some functions had to be rewritten because CMUCL couldn't optimize
+ them for the particular cases in which they were used, being stopped
+ by higher-order calls to dynamic functions, whereas these dynamic
+ functions were actually static (LISP has no way of specifying that)
+ and very much specializable.
+\item
+When translating to C, we can do away with dynamic allocation,
+ and even with the stack, using special arenas for everything.
+ The stack is but a particular arena, although a special strategy
+ might be to use implicit stack allocation in some cases.
+\item
+When the search tree is well-defined, deterministic, etc.,
+ it can be automatically parallelized and massively distributed.
+\item
+in case where there is not total trust in distributed search,
+ redundant clients can be run, and a table can be maintained (or not)
+ to memoize schedules and/or results (if they cannot be deduced simply
+ from the schedule and unified table -- or maybe rather the unified
+ table can be computed from the schedule -- or maybe the implementation
+ maintains several versions)
+\item
+the first few levels are handled by a small parallel hierarchy
+ of lisp programs on trusted servers. When they have sufficiently
+ reduced the search space, specialized C programs are dumped for
+ the searching the current sub-tree.
+\item
+''sufficiently'' is determined according to some dynamically-checked
+ heuristics to balance C and specialized code speed versus
+ C compilation and specialization slowness),
+\item
+Since determinism is useful for comparison, these dynamic heuristic
+ evaluations for speed should use pseudo-randomized samples with
+ a good-quality portable deterministic PRNG and a shared memoized random seed.
+\item
+metaprogramming allows to maintain reliably several different coherent
+ versions of a 'same' structure, each corresponding to a different aspect
+ of it (valid at different times, maybe interleaved), whereas it's a hell
+ to do it consistently (let alone efficiently or maintainably) by hand.
+\item
+specialized C programs for searching subtrees can be queued and dispatched
+ to less trusted and non-LISP-running machines.
+\item
+Some of the C infrastructure needs be compiled but once per architecture;
+ other data needs be compiled for every subtree.
+\end{itemize}
+
+\subsection{Digging meta-levels}
+
+descending and digging are verbs I use for exploring and
+ actually making meta-levels suitable for metaprogramming,
+ knowing that such activities extend implementations DOWNWARD, not UPWARD.
+\begin{itemize}
+\item
+ Some may prefer to see meta-level exploration as climbing,
+  considering that they go to higher, more unreachable places,
+  whence information flows downwards.
+  But I feel that digging large surfaces down to hell to provide deeper and
+  deeper foundations to the computations you build gives a more accurate vision
+  of what's involved in metaprogramming than that of making an occasional
+  tourist excursion in a high peek.
+\item
+ Plus there's virtually no limit to the amount and variety of digging
+  efforts, whereas you go to high places takes only so much effort in so
+  many different ways, and you can only provide so much infrastructure
+  once up there.
+\item
+ Finally, the analogy of digging so as to program downward levels
+  usefully extends in reminding us that the taller the final building
+  we aim at achieving, the deeper and wider the foundations we need.
+\item
+ So yes, meta-level software serves to go higher up on top of it;
+  but building that meta-level software really means going down.
+\end{itemize}
+
+So if we consider a complete computing system as a building,
+ and go down from the top of computing systems, here is what we see,
+ each level either being manually entered by some user or \metan-programmer,
+ or being the topmost result of automatic computations by underlying
+ infrastructure at below levels, themselves subject to similar criteria.
+\begin{itemize}
+\item
+ at the top, there is raw final data, as manipulated by the user
+\item
+ one level below, there are programs, as written by the programmer.
+\item
+ then, there are meta-programs, like macros, or compilers, that
+  transform programs into other programs.
+\item
+ then, there are meta-meta-programs, that manipulate meta-programs,
+  and choose the right combination thereof.
+\item
+ etc.
+\end{itemize}
+
+We can see how our optimization process could descend meta-levels:
+\begin{itemize}
+\item
+ at the top, data, either input by us or output by the program,
+  as final or intermediate results. Modifying these data is making
+  computation by hand -- doing the work of a computer.
+\item
+ below, the many versions and components of our search program,
+  as processed by the system and usually entered by the programmer.
+  Modifying these programs by hand, so as to transform and optimize them
+  is making (meta-level) computation by hand -- doing the work of a computer.
+\item
+ then, there are meta-programs that help build programs. They can apply
+  some optimization, automatically maintain coherence between various
+  internal and external encodings, etc. Having them is great, but once again,
+  explaining which meta-program to use when and to combine how is some work
+  that could be automated.
+\item
+ a program that would search for proper tactics to combine meta-programs,
+  based on analyses of programs is a meta-meta-program.
+  Making these tactics reversible and redoing these analyses dynamically
+  can provide for quite a sophisticated meta-meta-program that could
+  adapt its tactics at runtime to the actual running data and
+  speed of programs. Having them is great, but etc.
+  In dynamic setting, using some generic meta-program to make transformations
+  incremental could also be usefully used within such meta-meta-programs
+  or on them.
+\item
+ a program that would transform meta-meta-programs so as to learn from
+  dynamically acquired information on the speed of programs and the
+  return of investment from various optimizations would be a {\metax 3} program.
+\end{itemize}
+
+\subsection{Touching the ground}
+\begin{itemize}
+\item
+  somewhere, deep below, is a system hardware and the compiler that usually
+  running at some level above the raw hardware. Separating the user and
+  this hardware, arbitrary levels of \metan-programs might be involved.
+\item
+  it is very important that at every stage of the development, the system
+  "touch the ground" -- that is, is actually executable. Digging too deep
+  at once, or building roofs when the walls are not there yet, means that
+  a stage will be useless even if complete, until other stages are ready,
+  and even then, might require adapting code to fit walls as they finally
+  are rather than as they were designed when coding begun.
+\item
+  In other words, the system should be worked in incremental steps, each
+  of which leaves a working system when done. When scheduling modifications
+  to work on, modifications that depend on further modifications so as to
+  be usable should be avoided (unless, at some metalevel, they are useful
+  for designing the further component, even though they are not for
+  implementing it).
+\end{itemize}
+
+
+(I suppose I could avoid side-effects in macros altogether by ugly hacks
+involving putting everything in a huge macro that propagates additional
+information monadically -- but yuck)
+
+\end{document}
+
+;; This file depends on the library file fare.lisp
+;; See notes in soma-notes.txt
+
+"
+[rik] i've only got a C solution, and that can afford to just literally
+      brute-force through every position and rotation of all the pieces
+[rik] it takes quarter of a second, on a p2-300
+>rik< what format do you expect for output?
+[rik] <shrug> anything, as long as it's understandable in some form
+[rik] the first one i had was printing the piece numbers in a 4 by 4 grid,
+      with 4 grids next to each other, the leftmost grid being \"top\", and the
+      rightmost being \"bottom\" layers
+[rik] the other way is to say where in the cube the pieces are
+[rik] i don't mind which. either one is equally hard on my poor little brain :)
+>rik< do you want solutions up to symmetry, or including symmetric ones?
+[rik] the program can stop when it finds its first solution. I'm not looking
+      for all of the possible solutions
+"
+
+;; For the original 3x3x3 soma by Piet Heine, see also
+;;      http://home8.inet.tele.dk/bundgard/SOMA/SOMA.HTM
+;; The name comes from the drug in Aldous Huxley's 'Brave New World'
+;;      http://www.huxley.net/bnw/
