@@ -8,14 +8,14 @@ The largest palindrome made from the product of two 2-digit numbers is 9009 = 91
 Find the largest palindrome made from the product of two 3-digit numbers.
 |#
 
-(uiop:define-package :fare-puzzles/euler4
+(uiop:define-package :fare-puzzles/euler/euler4
   (:use :uiop :cl
         :fare-puzzles/util/cache :fare-puzzles/util/extremizer
         :fare-puzzles/util/decimal :fare-puzzles/util/palindrome
         :fare-puzzles/util/simple-search :fare-puzzles/util/simple-integers)
   (:export #:solution #:euler-4))
 
-(in-package :fare-puzzles/euler4)
+(in-package :fare-puzzles/euler/euler4)
 
 ;;(declaim (optimize (speed 3) (safety 0) (debug 0)))
 (declaim (optimize (speed 1) (safety 3) (debug 3)))

@@ -1,6 +1,6 @@
-(uiop:define-package :fare-puzzles/glat1
+(uiop:define-package :fare-puzzles/misc/glat1
   (:use :common-lisp))
-(in-package :fare-puzzles/glat1)
+(in-package :fare-puzzles/misc/glat1)
 
 ; Solving GLAT question #1:
 ; WWWDOT - GOOGLE = DOTCOM

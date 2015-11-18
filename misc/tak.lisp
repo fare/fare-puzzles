@@ -1,6 +1,6 @@
-(uiop:define-package :fare-puzzles/tak
+(uiop:define-package :fare-puzzles/misc/tak
   (:use :common-lisp))
-(in-package :fare-puzzles/tak)
+(in-package :fare-puzzles/misc/tak)
 
 ;; At ILC'2012, Tak challenged us to write a palindromic program,
 ;; modulo parenthesis inversion,

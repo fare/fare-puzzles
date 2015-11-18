@@ -8,12 +8,12 @@ Find the sum of the only eleven primes that are both truncatable from left to ri
 NOTE: 2, 3, 5, and 7 are not considered to be truncatable primes.
 |#
 
-(uiop:define-package :fare-puzzles/euler37
+(uiop:define-package :fare-puzzles/euler/euler37
   (:use :uiop :cl
         :fare-puzzles/util/decimal :fare-puzzles/util/simple-prime)
   (:export #:solution))
 
-(in-package :fare-puzzles/euler37)
+(in-package :fare-puzzles/euler/euler37)
 
 ;;(declaim (optimize (speed 3) (safety 0) (debug 0)))
 (declaim (optimize (speed 1) (safety 3) (debug 3)))

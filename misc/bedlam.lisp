@@ -1,7 +1,7 @@
 ;;; -*- Mode: Lisp ; Base: 10 ; Syntax: ANSI-Common-Lisp -*-
 
 ;; run me as one of:
-;;	cl -s fare-puzzles/bedlam
+;;	cl -s fare-puzzles/misc/bedlam
 
 ;;; Solver for the Bedlam cube puzzle
 
@@ -18,10 +18,10 @@
 ;;; Implementation notes: see on the end of file
 
 ;;; Do things in their own package, but allow reloading.
-(uiop:define-package :fare-puzzles/bedlam
+(uiop:define-package :fare-puzzles/misc/bedlam
   (:mix :fare-utils :uiop :alexandria :common-lisp)
   (:export :solve-problem))
-(in-package :fare-puzzles/bedlam)
+(in-package :fare-puzzles/misc/bedlam)
 
 ;;; Description of the pieces
 ;;; as described by existance in a 3d grid (x,y,z)

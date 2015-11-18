@@ -1,9 +1,9 @@
 ;;; -*- Mode: Lisp; Syntax: Common-Lisp; Base: 10; coding: utf-8 -*-
 ; Ways to write DUDE in Lisp, and other clever one-liners.
 
-(uiop:define-package :fare-puzzles/d00d
+(uiop:define-package :fare-puzzles/misc/d00d
   (:use :common-lisp))
-(in-package :fare-puzzles/d00d)
+(in-package :fare-puzzles/misc/d00d)
 
 (format t "~X~%" 53261)
 (format nil "~X~%" 53261)

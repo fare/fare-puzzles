@@ -1,8 +1,8 @@
 ":" ; exec cl-launch -s fare-puzzles/zebra
 
-(uiop:define-package :fare-puzzles/zebra
+(uiop:define-package :fare-puzzles/misc/zebra
   (:mix :fare-utils :uiop :alexandria :common-lisp))
-(in-package :fare-puzzles/zebra)
+(in-package :fare-puzzles/misc/zebra)
 
 
 (declaim (optimize (speed 2) (safety 3) (debug 3)))
