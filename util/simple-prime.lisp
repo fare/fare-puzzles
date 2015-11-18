@@ -1,13 +1,14 @@
 ;; Dealing with decimal representation of integers
 (uiop:define-package :fare-puzzles/util/simple-prime
   (:use :uiop :cl
-        :fare-puzzles/util/cache :fare-puzzles/util/simple-integers)
+        :fare-puzzles/util/cache)
   (:export
    #:nth-small-prime
    #:small-prime-i
    #:small-prime-p
    #:primes-below
    #:erathostenes-sieve
+   #:wheel-position
    ))
 
 ;; See also "The Genuine Sieve of Erathostenes" https://www.cs.hmc.edu/~oneill/papers/Sieve-JFP.pdf
@@ -45,9 +46,30 @@
 (defun largest-known-small-prime ()
   (aref *small-primes* (1- (fill-pointer *small-primes*))))
 
+(defun compute-prime-wheel (primes)
+  (let* ((product (reduce '* primes))
+         (rp (coerce (loop for n from 0 below product collect (= 1 (gcd n product))) 'vector)))
+    (check-type product (integer 2 *))
+    (coerce (loop for n from 0 below product
+                  collect (loop for i from (1+ n) when (aref rp (mod i product)) return (- i n)))
+            'vector)))
+
+(defparameter *wheel-2357* (coerce (compute-prime-wheel '(2 3 5 7)) '(vector (unsigned-byte 8))))
+
+(defun wheel-position (wheel number)
+  (declare (type vector wheel) (type integer number))
+  (mod number (length wheel)))
+
+(defun wheel-next (wheel number &optional (position (wheel-position wheel number)))
+  (let ((increment (aref wheel position)))
+    (declare (type fixnum position increment))
+    (values (+ number increment) (mod (+ position increment) (length wheel)))))
+
+
 (defun erathostenes-sieve (n)
   "Sieve of Erathostenes up to N"
-  (let ((m (fill-pointer *prime-sieve*)))
+  (let ((m (fill-pointer *prime-sieve*))
+        (wheel *wheel-2357*))
     (when (>= n m)
       (let ((r (floor (sqrt n))))
         (adjust-array *prime-sieve* (1+ n) :initial-element 1)
@@ -59,17 +81,21 @@
                       for q from (if (>= p2 m) p2 (* p (ceiling m p))) to n by p do
                   (setf (aref *prime-sieve* q) 0))
               finally
-                 (loop for p from (+ p 2) to r by 2 ;; exclude even numbers; we could do better.
-                       do (when (plusp (aref *prime-sieve* p))
-                           (vector-push-extend p *small-primes*)
-                           (loop with p2 = (* p p)
-                                 for q from (if (>= p2 m) p2 (* p (ceiling m p))) to n by p do
-                                   (setf (aref *prime-sieve* q) 0))))))
-      (let ((lp (largest-known-small-prime)))
-        (when (< lp n)
-          (loop for p from (+ lp 2) to n by 2 do
-            (when (plusp (aref *prime-sieve* p))
-              (vector-push-extend p *small-primes*)))))))
+                 (loop with wp = (wheel-position wheel p) do
+                   (multiple-value-setq (p wp) (wheel-next wheel p wp))
+                   (when (> p n) (return))
+                   (when (plusp (aref *prime-sieve* p))
+                     (vector-push-extend p *small-primes*)
+                     (loop with p2 = (* p p)
+                           for q from (if (>= p2 m) p2 (* p (ceiling m p))) to n by p do
+                             (setf (aref *prime-sieve* q) 0))))))
+      (let ((p (largest-known-small-prime)))
+        (when (< p n)
+          (loop with wp = (wheel-position wheel p) do
+                (multiple-value-setq (p wp) (wheel-next wheel p wp))
+                (when (> p n) (return))
+                (when (plusp (aref *prime-sieve* p))
+                  (vector-push-extend p *small-primes*)))))))
   (make-array (1+ n) :displaced-to *prime-sieve* :element-type 'bit))
 
 ;; pi function: numbers for prime not exceeding n
