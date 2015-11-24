@@ -9,10 +9,10 @@ Find the largest palindrome made from the product of two 3-digit numbers.
 |#
 
 (uiop:define-package :fare-puzzles/euler/euler4
-  (:use :uiop :cl
+  (:use :fare-utils :uiop :cl
         :fare-puzzles/util/cache :fare-puzzles/util/extremizer
         :fare-puzzles/util/decimal :fare-puzzles/util/palindrome
-        :fare-puzzles/util/simple-search :fare-puzzles/util/simple-integers)
+        :fare-puzzles/util/simple-search)
   (:export #:solution #:euler-4))
 
 (in-package :fare-puzzles/euler/euler4)
@@ -55,14 +55,14 @@ Find the largest palindrome made from the product of two 3-digit numbers.
 
 ;;; Now, brute force solution: enumerate all products, filter out those that are not palindromic.
 (defun all-products-of-two-factors-below (n)
-  (sort
+  (sorted
    (remove-duplicates
     (while-collecting (c)
       (loop for i from 0 below n do
         (loop for j from 0 to i do
-          (c (list (* i j) i j))))))
+          (c (list (* i j) i j)))))
+    :test 'equal :key 'first)
    '> :key 'first))
-
 ;;; Works well for n=3, doesn't work well for n=4
 (defun euler-4.0 (n)
   "Biggest palindrome product of two factors below ten to the N"

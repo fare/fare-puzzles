@@ -1,12 +1,12 @@
 ;; Simple integer arithmetics
-(uiop:define-package :fare-puzzles/util/simple-integers
+(uiop:define-package :fare-puzzles/util/simple-integer
   (:use :uiop :cl)
   (:export
-   #:numbers-below-n))
+   #:integers-below))
 
-(in-package :fare-puzzles/util/simple-integers)
+(in-package :fare-puzzles/util/simple-integer)
 
-(defun numbers-below-n (n)
+(defun integers-below (n)
   (loop for i below n collect i))
 
 (defun gcd.1 (n m)

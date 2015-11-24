@@ -9,16 +9,14 @@ NOTE: 2, 3, 5, and 7 are not considered to be truncatable primes.
 |#
 
 (uiop:define-package :fare-puzzles/euler/euler37
-  (:use :uiop :cl
+  (:use :fare-utils :uiop :cl
         :fare-puzzles/util/decimal :fare-puzzles/util/simple-prime)
   (:export #:solution))
 
 (in-package :fare-puzzles/euler/euler37)
 
-;;(declaim (optimize (speed 3) (safety 0) (debug 0)))
-(declaim (optimize (speed 1) (safety 3) (debug 3)))
-
-;;(uiop-debug)
+;;(uiop-debug) (declaim (optimize (speed 1) (safety 3) (debug 3))) ; DEBUG!
+;;(declaim (optimize (speed 3) (safety 0) (debug 0))) ;; GO FAST!
 
 (defun solution ()
   (loop
@@ -27,7 +25,7 @@ NOTE: 2, 3, 5, and 7 are not considered to be truncatable primes.
     for previous-right = (reverse *prime-digits*) then right-truncatable
     for left-truncatable = (next-left-truncatables previous-length previous-left)
     for right-truncatable = (next-right-truncatables previous-length previous-right)
-    for current-solutions = (sort (intersection left-truncatable right-truncatable :test 'equal) '<)
+    for current-solutions = (sorted (intersection left-truncatable right-truncatable :test 'equal) '<)
     while (and left-truncatable right-truncatable t)
     ;; do (DBG :s left-truncatable right-truncatable current-solutions
     do (map () 'println current-solutions)

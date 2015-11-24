@@ -5,8 +5,6 @@
   (:export
    #:sequence-palindrome-p
    #:palindromep))
-
-
 (in-package :fare-puzzles/util/palindrome)
 
 (defun sequence-palindrome-p.1 (l)
