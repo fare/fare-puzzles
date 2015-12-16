@@ -24,17 +24,27 @@ For the curious, here's why 7 is a happy number: 7->49->97->130->10->1. Here's w
 |#
 
 #|
-Discussion:
+Solution:
 Let f(n) be the sum of the squares of the digits of n.
 Let g(n) be 81*(1+log_10(1+n))
 f(n) < g(n)
 g'(n) = G/(1+n) where G=81/ln(10)
-G < 36, so for n >= 35, g'(n) < 1 = f(n).
+G < 36, so for n >= 35, g'(n) < 1 = f'(n).
 Now, g(280) < 280, so for all n >= 280, f(n) < g(n) < n.
+We can reduce this upper bound further by looking for the biggest number
+such that f(n)>=n. Looking only below 280, we find it's 99, with f(99)=162.
 
-In other words, we only have to detect all happy and unhappy numbers for n < 280
+In other words, we only have to detect all happy and unhappy numbers for n < 163,
 with a union-find algorithm, and we can reduce the problem to iterating f until
-the number is less than 280.
+the number is less than 163.
+
+Actually, we only look for the happy numbers (i.e. one cycle, not all of them),
+and only below 163, so we can use a simple bitmap and walk the reverse table
+with a simple queue starting backwards from 1.
+Any correct algorithm for n<163 is ipso facto O(1), and
+the reduction to the small problem by iteration is pretty fast.
+So we could have a trivial iterate-and-detect-cycle algorithm
+that would do about as well.
 |#
 
 (uiop:define-package :fare-puzzles/codeeval/codeeval-39
@@ -49,7 +59,13 @@ the number is less than 280.
 
 (defun f (n) (loop :for d :in (digits-of n) :sum (* d d)))
 (defun g (n) (* 81 (1+ (log (1+ n) 10))))
-(defparameter *m* 280) ;; see explanation above
+
+(assert (< (g 280) 280))
+(assert (< (/ 81 (log 10) (1+ 35)) 1))
+(assert (< (/ (- (g 35.001) (g 35)) .001) 1))
+
+(defparameter *m*
+  (1+ (f (loop for i downfrom 280 until (>= (f i) i) finally (return i)))))
 
 (defparameter *antecedents*
   (let ((antecedents (make-array *m* :initial-element nil)))
@@ -71,6 +87,12 @@ the number is less than 280.
   (loop :for i = n :then (f i)
         :until (< i *m*)
         :finally (return (plusp (aref *happyp* i)))))
+
+(defun happyp/naive (n)
+  (loop :for l = () :then (cons i l)
+        :for i = n :then (f i)
+        :until (member i l :test 'equal)
+        :finally (return (= i 1))))
 
 (defun main ()
   (loop :for l = (read-line nil nil)
