@@ -31,8 +31,10 @@ f(n) < g(n)
 g'(n) = G/(1+n) where G=81/ln(10)
 G < 36, so for n >= 35, g'(n) < 1 = f'(n).
 Now, g(280) < 280, so for all n >= 280, f(n) < g(n) < n.
-We can reduce this upper bound further by looking for the biggest number
-such that f(n)>=n. Looking only below 280, we find it's 99, with f(99)=162.
+We can reduce this upper bound further by looking the smallest number
+such that for any n >= m, f(n) < n, and for any n < m, f(n) < m.
+Therefore, cycles may only involve numbers less than m.
+We find it's 163, with f(99)=162.
 
 In other words, we only have to detect all happy and unhappy numbers for n < 163,
 with a union-find algorithm, and we can reduce the problem to iterating f until
@@ -65,7 +67,16 @@ that would do about as well.
 (assert (< (/ (- (g 35.001) (g 35)) .001) 1))
 
 (defparameter *m*
-  (1+ (f (loop for i downfrom 280 until (>= (f i) i) finally (return i)))))
+  (1+ (loop for i below 280 for j = (f i) when (<= i j) maximize j))
+  "Smallest number such that for any n >= m, f(n) < n, and for any n < m, f(n) < m.
+Therefore, cycles may only involve numbers less than m.")
+
+(defun happyp/naive (n)
+  "Naive, straightforward solution. We have proven that it works"
+  (loop :for l = () :then (cons i l)
+        :for i = n :then (f i)
+        :until (member i l :test 'equal)
+        :finally (return (= i 1))))
 
 (defparameter *antecedents*
   (let ((antecedents (make-array *m* :initial-element nil)))
@@ -83,16 +94,11 @@ that would do about as well.
     happyp))
 
 (defun happyp (n)
+  "Faster solution"
   (check-type n (integer 0 *))
   (loop :for i = n :then (f i)
         :until (< i *m*)
         :finally (return (plusp (aref *happyp* i)))))
-
-(defun happyp/naive (n)
-  (loop :for l = () :then (cons i l)
-        :for i = n :then (f i)
-        :until (member i l :test 'equal)
-        :finally (return (= i 1))))
 
 (defun main ()
   (loop :for l = (read-line nil nil)
