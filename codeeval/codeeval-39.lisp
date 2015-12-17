@@ -83,14 +83,17 @@ Therefore, cycles may only involve numbers less than m.")
     (loop :for n :below *m* :do (push n (aref antecedents (f n))))
     antecedents))
 
+(defun visit-antecedents (n visited)
+  (loop :with queue = (list n) :while queue :do
+    (destructuring-bind (a &rest more) queue
+      (if (zerop (aref visited a))
+          (setf (aref visited a) 1
+                queue (append (aref *antecedents* a) more))
+          (setf queue more)))))
+
 (defparameter *happyp*
   (let ((happyp (make-array *m* :initial-element 0 :element-type 'bit)))
-    (loop :with queue = '(1) :while queue :do
-      (destructuring-bind (happy &rest more) queue
-        (if (zerop (aref happyp happy))
-            (setf (aref happyp happy) 1
-                  queue (append (aref *antecedents* happy) more))
-            (setf queue more))))
+    (visit-antecedents 1 happyp)
     happyp))
 
 (defun happyp (n)
@@ -99,6 +102,24 @@ Therefore, cycles may only involve numbers less than m.")
   (loop :for i = n :then (f i)
         :until (< i *m*)
         :finally (return (plusp (aref *happyp* i)))))
+
+;; OK, what if we want to find all the cycles?
+(defparameter *cycle-minima*
+  (loop
+    :with visited = (make-array *m* :initial-element 0 :element-type 'bit)
+    :for i :below *m*
+    :when (zerop (aref visited i))
+      :collect i
+    :and
+      :do (visit-antecedents i visited)))
+
+(assert (equal *cycle-minima* '(0 1 2 3 4)))
+
+(defun happyp/clever (n)
+  "Clever solution. We have proven that it works"
+  (loop :for i = n :then (f i)
+        :until (< i 5)
+        :finally (return (= i 1))))
 
 (defun main ()
   (loop :for l = (read-line nil nil)
