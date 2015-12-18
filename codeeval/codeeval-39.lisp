@@ -59,37 +59,53 @@ that would do about as well.
 ;;(uiop-debug) (declaim (optimize (speed 1) (safety 3) (debug 3))) ; DEBUG!
 ;;(declaim (optimize (speed 3) (safety 0) (debug 0))) ;; GO FAST!
 
-(defun f (n) (loop :for d :in (digits-of n) :sum (* d d)))
-(defun g (n) (* 81 (1+ (log (1+ n) 10))))
+(defun f (n)
+  "The magic function we're iterating"
+  (loop :for d :in (digits-of n) :sum (* d d)))
+
+(defun g (n)
+  "A differentiable majorant for F. Strictly increasing."
+  (* 81 (1+ (log (1+ n) 10))))
+
+(defun g-prime (n)
+  "The differential of g, itself strictly decreasing"
+  (/ 81 (log 10) (1+ n)))
 
 (assert (< (g 280) 280))
-(assert (< (/ 81 (log 10) (1+ 35)) 1))
-(assert (< (/ (- (g 35.001) (g 35)) .001) 1))
+(assert (< (g-prime 35) 1))
+(assert (< (/ (- (g 35.001) (g 35)) .001) 1)) ;; compute the differential the hard way.
 
 (defparameter *m*
   (1+ (loop for i below 280 for j = (f i) when (<= i j) maximize j))
   "Smallest number such that for any n >= m, f(n) < n, and for any n < m, f(n) < m.
 Therefore, cycles may only involve numbers less than m.")
 
-(defun happyp/naive (n)
-  "Naive, straightforward solution. We have proven that it works"
+(defun happy-suite (n)
+  "Iterate F from N until a cycle is detected,
+return the list of iteratees, in reverse, with a single repetition"
   (loop :for l = () :then (cons i l)
         :for i = n :then (f i)
         :until (member i l :test 'equal)
-        :finally (return (= i 1))))
+        :finally (return (cons i l))))
+
+(defun happyp/naive (n)
+  "Naive, straightforward solution. We have proven that it works"
+  (= 1 (car (happy-suite n))))
 
 (defparameter *antecedents*
   (let ((antecedents (make-array *m* :initial-element nil)))
     (loop :for n :below *m* :do (push n (aref antecedents (f n))))
-    antecedents))
+    antecedents)
+  "A table to reverse F and find the antecedents of any number")
 
 (defun visit-antecedents (n visited)
+  "Given a bitmap VISITED, mark N and old its antecedents below *M* as visited."
   (loop :with queue = (list n) :while queue :do
-    (destructuring-bind (a &rest more) queue
-      (if (zerop (aref visited a))
-          (setf (aref visited a) 1
-                queue (append (aref *antecedents* a) more))
-          (setf queue more)))))
+    (let ((a (pop queue)))
+      (when (zerop (aref visited a))
+        ;;(println a)
+        (setf (aref visited a) 1
+              queue (append (aref *antecedents* a) queue))))))
 
 (defparameter *happyp*
   (let ((happyp (make-array *m* :initial-element 0 :element-type 'bit)))
@@ -103,17 +119,31 @@ Therefore, cycles may only involve numbers less than m.")
         :until (< i *m*)
         :finally (return (plusp (aref *happyp* i)))))
 
+(defun cycle (n)
+  "Given N, what is the repeating cycle when iterating F"
+  (destructuring-bind (rep &rest more) (happy-suite n)
+    (member rep (reverse more) :test 'equal)))
+
+(defun cycle-minimum (n)
+  "Given N, what is the smallest number that appears in the final cycle starting from N"
+  (reduce 'min (cycle n)))
+
 ;; OK, what if we want to find all the cycles?
 (defparameter *cycle-minima*
-  (loop
-    :with visited = (make-array *m* :initial-element 0 :element-type 'bit)
-    :for i :below *m*
-    :when (zerop (aref visited i))
-      :collect i
-    :and
-      :do (visit-antecedents i visited)))
+  (sort
+   (while-collecting (c)
+     (loop
+       :with visited = (make-array *m* :initial-element 0 :element-type 'bit)
+       :for i :below *m*
+       :when (zerop (aref visited i)) :do
+         (let ((m (cycle-minimum i)))
+           (c m)
+           ;;(println "new cycle found")
+           (visit-antecedents m visited))))
+   '<))
 
-(assert (equal *cycle-minima* '(0 1 2 3 4)))
+(assert (equal *cycle-minima* '(0 1 4)))
+(assert (equal #*01000 (subseq *happyp* 0 5)))
 
 (defun happyp/clever (n)
   "Clever solution. We have proven that it works"
