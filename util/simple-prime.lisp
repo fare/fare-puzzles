@@ -1,4 +1,7 @@
 ;; Dealing with small prime numbers (say up to 1e8, if using a few GiB of memory)
+;; NB: This code maintains global tables and is generally not thread-safe.
+;; See also "The Genuine Sieve of Erathostenes" https://www.cs.hmc.edu/~oneill/papers/Sieve-JFP.pdf
+
 (uiop:define-package :fare-puzzles/util/simple-prime
   (:use :uiop :cl
         :fare-puzzles/util/cache)
@@ -8,18 +11,16 @@
    #:prime-p
    #:erathostenes-sieve
    #:pi-function
+   #:divides-p
    #:factor
    ;; #:number-of-known-primes
    ;; #:largest-known-prime
    ;; #:compute-prime-wheel #:*wheel* #:wheel-position #:wheel-next
    ))
 
-;; See also "The Genuine Sieve of Erathostenes" https://www.cs.hmc.edu/~oneill/papers/Sieve-JFP.pdf
-
 (in-package :fare-puzzles/util/simple-prime)
 
-(declaim (optimize (speed 3) (safety 0) (debug 0))) ;; GO FAST!
-
+;;(declaim (optimize (speed 3) (safety 0) (debug 0))) ;; GO FAST!
 
 (defun compute-prime-wheel (primes)
   "Given a list of PRIMES, return a vector the size of which is the product M of those primes,
@@ -143,17 +144,15 @@ by a factor of the wheel size, and its position in the wheel."
   (check-type n (integer 1 *))
   (while-collecting (f)
     (loop
-      with max = (isqrt n)
+      with max
       for i from 1
-      while (< 1 n) do
+      until (= 1 n) do
         (let ((prime (nth-prime i)))
+          (unless max
+            (setf max (isqrt n)))
           (when (> prime max)
             (f n) (return))
-          (loop
-            with found = nil
-            do (multiple-value-bind (m r) (floor n prime)
-                 (unless (zerop r)
-                   (when found (setf max (isqrt n)))
-                   (return))
-                 (setf found t n m)
-                 (f prime)))))))
+          (loop (multiple-value-bind (m r) (floor n prime)
+                  (unless (zerop r) (return))
+                  (setf n m max nil)
+                  (f prime)))))))
