@@ -39,7 +39,7 @@ NOTE: 2, 3, 5, and 7 are not considered to be truncatable primes.
     (loop for digit from 9 downto 1 do
       (loop for truncatable in left-truncatables
             for candidate = (+ (* (power-of-ten length) digit) truncatable) do
-              (when (small-prime-p candidate)
+              (when (prime-p candidate)
                 (c candidate))))))
 
 (defun next-right-truncatables (length right-truncatables)
@@ -51,5 +51,5 @@ NOTE: 2, 3, 5, and 7 are not considered to be truncatable primes.
     (loop for truncatable in right-truncatables do
       (loop for digit from 9 downto 1
             for candidate = (+ (* 10 truncatable) digit) do
-              (when (small-prime-p candidate)
+              (when (prime-p candidate)
                 (c candidate))))))
