@@ -15,30 +15,39 @@
 N is the number of vertices, the entry at index 0 contains the total weight of the graph,
 and entry at index I contains a list of pairs (NEIGHBOR . WEIGHT) describing the edges
 of the graph ending at vertex I."
-  'vector)
+  'simple-vector)
 
 (defun make-graph (number-of-vertices)
+  "Create a (mutable) graph with the given NUMBER-OF-VERTICES and no edges."
+  (declare (type fixnum number-of-vertices))
   (let ((g (make-array (list (1+ number-of-vertices)) :initial-element nil)))
-    (setf (aref g 0) 0)
+    (setf (svref g 0) 0)
     g))
 
 (defun graph-number-of-vertices (graph)
+  "Given a GRAPH, return the number of vertices"
+  (declare (type graph graph))
   (1- (length graph)))
 
 (defun graph-vertex-edges (graph vertex)
-  (aref graph vertex))
+  "Given a GRAPH and a VERTEX, return a list of pairs (NEIGHBOR . WEIGHT)
+describing the edges from that vertex in the graph"
+  (svref graph vertex))
 
 (defun add-edge! (graph vertex1 vertex2 weight)
-  (declare (type graph graph))
+  "Given a (mutable) GRAPH, two vertices VERTEX1 and VERTEX2 and a WEIGHT,
+add to the GRAPH an edge with given weight linking given vertices."
+  (declare (type graph graph) (type fixnum vertex1 vertex2) (type integer weight))
   (let ((number-of-vertices (1- (length graph))))
     (assert (<= 1 vertex1 number-of-vertices))
     (assert (<= 1 vertex2 number-of-vertices)))
-  (push (cons vertex2 weight) (aref graph vertex1))
-  (push (cons vertex1 weight) (aref graph vertex2))
-  (incf (aref graph 0) weight)
+  (push (cons vertex2 weight) (svref graph vertex1))
+  (push (cons vertex1 weight) (svref graph vertex2))
+  (incf (svref graph 0) weight)
   t)
 
 (defun string->integers (string)
+  "Parse a string of space-delimited decimal integers as a list of integers"
   (mapcar #'parse-integer
 	  (remove-if 'emptyp (split-string string :separator " "))))
 
@@ -65,53 +74,52 @@ Return an object of type GRAPH."
      (assert (= number-of-observed-edges number-of-edges))
      (return graph))))
 
-(defun edge-weight< (edge1 edge2)
-  "Compare two edges to a current vertex, where each edge is either NIL, representing
-the absence of edge, which is superior to any other edge but itself, or a pair of
-a vertex and a weight, and the superior edge is the one with the greater weight.
-Return T if edge1 is strictly less than edge2 for this comparison."
-  (if (and edge1 edge2)
-      (< (cdr edge1) (cdr edge2))
-      (and edge1 t)))
-
 (defun vertex-edge-weight< (vew1 vew2)
-  "Given two entries of vertex, neighbor . weight (v n . w) and/or only (v),
-compare them by weight when defined (with infinite weight if no n and w),
+  "Given two entries of (vertex neighbor . weight) and/or only (vertex),
+compare them by weight when defined (with infinite weight if no edge),
 otherwise compare them by vertex, then by neighbor.
 Return T if vew1 is strictly less than vew2 for this comparison."
-  (or (not (cdr vew2))
-      (and (cdr vew1)
-	   (or (edge-weight< (cdr vew1) (cdr vew2))
-	       (and (= (cddr vew1) (cddr vew2))
-		    (< (cadr vew1) (cadr vew2)))))))
+  (nest
+   (destructuring-bind (vertex1 . edge1) vew1)
+   (destructuring-bind (vertex2 . edge2) vew2)
+   (and edge1)
+   (or (null edge2))
+   (destructuring-bind (neighbor1 . weight1) edge1)
+   (destructuring-bind (neighbor2 . weight2) edge2)
+   (or (< weight1 weight2))
+   (and (= weight1 weight2))
+   (or (< vertex1 vertex2))
+   (and (= vertex1 vertex2))
+   (< neighbor1 neighbor2)))
 
-(defun minimum-spanning-tree (graph)
-  "Given a connected GRAPH in the same format as returned by READ-WEIGHTED-UNDIRECTED-GRAPH-FILE,
-return a minimum spanning tree, which is a graph in the same format that happens to be
-a tree, that contains all vertices in GRAPH, only edges in GRAPH, and has minimum weight among
-graphs with the previous property. Use the Dijkstra-Jarnik-Prim greedy algorithm."
-  (let* ((number-of-vertices ;; V
+(defun minimum-spanning-forest (graph)
+  "Given a GRAPH in the same format as returned by READ-WEIGHTED-UNDIRECTED-GRAPH-FILE,
+return a minimum spanning forest, which is a graph in the same format that happens to be
+forest, that contains all vertices in GRAPH, only edges in GRAPH, and has the same connected
+components as the GRAPH, and has minimum weight among graphs with the previous property.
+Use the Dijkstra-Jarnik-Prim greedy algorithm with a Fibonacci heap."
+  (let* ((number-of-vertices ;; V -- one-letter names refer to variables in Wikipedia explanation.
 	  (graph-number-of-vertices graph))
 	 (remaining-vertices ;; Q
 	  (make-instance 'fibonacci-heap :sort-fun #'vertex-edge-weight<))
 	 (vertex-candidate ;; C, E: associate to each vertex the proper node in the heap
-	  (make-array (1+ number-of-vertices) :initial-element nil))
+	  (make-array (1+ number-of-vertices) :initial-element nil)) ; count from 1
 	 (spanning-forest ;; F
 	  (make-graph number-of-vertices)))
     (loop
       :for v :from 1 :upto number-of-vertices
       :for node = (nth-value 1 (add-to-heap remaining-vertices (list v)))
-      :do (setf (aref vertex-candidate v) node))
-    (loop :until (is-empty-heap-p remaining-vertices)
-      :do (destructuring-bind (vertex . edge) (pop-heap remaining-vertices)
-	    (when edge
-	      (destructuring-bind (neighbor . weight) edge
-		(add-edge! spanning-forest vertex neighbor weight)))
-	    (setf (aref vertex-candidate vertex) nil) ;; no longer in the candidate set.
-	    (loop :for (neighbor . weight) :in (graph-vertex-edges graph vertex)
-	      :for neighbor-candidate = (aref vertex-candidate neighbor)
-	      :when neighbor-candidate :do
-	      (let ((new-candidate `(,neighbor ,vertex . ,weight)))
-		(when (vertex-edge-weight< new-candidate (node-item neighbor-candidate))
-		  (decrease-key remaining-vertices neighbor-candidate new-candidate))))))
+      :do (setf (svref vertex-candidate v) node))
+    (loop :until (is-empty-heap-p remaining-vertices) :do
+      (destructuring-bind (vertex . edge) (pop-heap remaining-vertices)
+	(when edge
+	  (destructuring-bind (neighbor . weight) edge
+	    (add-edge! spanning-forest vertex neighbor weight)))
+	(setf (svref vertex-candidate vertex) nil) ;; remove from candidate set.
+	(loop :for (neighbor . weight) :in (graph-vertex-edges graph vertex)
+	  :for neighbor-candidate = (svref vertex-candidate neighbor)
+	  :when neighbor-candidate :do
+	  (let ((new-candidate `(,neighbor ,vertex . ,weight)))
+	    (when (vertex-edge-weight< new-candidate (node-item neighbor-candidate))
+	      (decrease-key remaining-vertices neighbor-candidate new-candidate))))))
    spanning-forest))
