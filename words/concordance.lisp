@@ -34,8 +34,10 @@ If everything is installed at expected paths, you can also dump an image with:
 
 
 Puzzle statement
-================
+----------------
 
+The original puzzle statement is as follows:
+"""
 Given an arbitrary text document written in English, write a program that will generate a
 concordance, i.e. an alphabetical list of all word occurrences, labeled with word frequencies.
 Bonus: label each word with the sentence numbers in which each occurrence appeared.
@@ -74,6 +76,10 @@ ee.	with	{2:1,2}
 ff.	word	{3:1,1,2}
 gg.	write	{1:1}
 hh.	written	{1:1}
+"""
+
+[Do not read what follows until after you've tried to solve the puzzle yourself,
+or at least have thought hard about all the subtleties involved in a solution.]
 
 
 Puzzle discussion
@@ -152,9 +158,9 @@ Bonus: label each word with the sentence numbers in which each occurrence appear
 
 (defun get-next-word-or-punctuation (string start)
   "Given a string and a start index, return three values:
-the next word or sentence-ending punctuation sign in the string (case preserved),
-the index for the first character after the word in the string,
-and whether that substring was a word (T) or a sentence-ending punctuation (NIL).
+the next word or sentence-ending punctuation sign in the string (case preserved), a string;
+the index for the first character after the word in the string, an integer;
+and whether that substring was a word (T) or a sentence-ending punctuation (NIL), a boolean.
 If the end of the string is reached without finding a word or punctuation, return NIL, NIL and NIL."
   ;; This is a very heuristic function, that has infinite room for improvement.
   ;; This initial version is barely good enough to handle the given example.
@@ -180,10 +186,10 @@ If the end of the string is reached without finding a word or punctuation, retur
         (loop :for w :in *dotted-words* :do
           (when (string-case-insensitive-prefix-p w string :start word-start)
             (found word-start (length w) t)))
-        ;; Normal case: a word is a series of series of letters.
+        ;; Normal case: a word is a series of letters.
         ;; TODO: recognize non-English words as series of letters in the same alphabet.
         ;; TODO: recognize composite words such as "non-English".
-        ;; TODO: recognize apostrophe as part of an abbreviated word, as in ol' -- or in French l'
+        ;; TODO: recognize apostrophe as part of an abbreviated word, as in "ol'" -- or French "l'"
         (let ((word-end (position-if-not #'letterp string :start (1+ word-start))))
           (found word-start (- word-end word-start) t))))))
 
@@ -192,7 +198,7 @@ If the end of the string is reached without finding a word or punctuation, retur
 for each word or sentence-ending punctuation in the STRING, with SUBSTRING being a substring,
 and WORDP being a boolean indicating if the substring was a word (or else, sentence-ending
 punctuation)."
-  (loop with start = 0 do
+  (loop :with start = 0 :do
     (multiple-value-bind (word new-start wordp) (get-next-word-or-punctuation string start)
       (unless word (return))
       (funcall processor word wordp)
@@ -260,6 +266,9 @@ a colon, and a comma separated list of 1-based indexes of sentences in which the
           ;; TODO: negotiate a less absurd output numbering format.
           ;; TODO: adapt field lengths to input instead of using arbitrary precomputed lengths.
           (format t "~@[~4A ~]~14A  {~A:~{~A~^,~}}~%" tag word count occurrences)))))
+
+
+;;;; Command-line interface for the puzzle solution
 
 (defun display-help (&optional (output *standard-output*))
   "Display help for the command-line version of this utility"
