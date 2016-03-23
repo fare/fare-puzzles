@@ -6,7 +6,7 @@
   (:import-from :cl-heap #:node-item)
   (:export
    #:read-weighted-undirected-graph-file
-   #:minimum-spanning-tree))
+   #:minimum-spanning-forest))
 
 (in-package :fare-puzzles/algo/prim)
 
@@ -82,6 +82,7 @@ Return T if vew1 is strictly less than vew2 for this comparison."
   (nest
    (destructuring-bind (vertex1 . edge1) vew1)
    (destructuring-bind (vertex2 . edge2) vew2)
+   (or (and (null edge1) (null edge2) (< vertex1 vertex2)))
    (and edge1)
    (or (null edge2))
    (destructuring-bind (neighbor1 . weight1) edge1)
@@ -106,20 +107,30 @@ Use the Dijkstra-Jarnik-Prim greedy algorithm with a Fibonacci heap."
 	  (make-array (1+ number-of-vertices) :initial-element nil)) ; count from 1
 	 (spanning-forest ;; F
 	  (make-graph number-of-vertices)))
+    ;; Initialize Q, C, E: need to add all vertices to the forest, but none is connected yet.
     (loop
       :for v :from 1 :upto number-of-vertices
       :for node = (nth-value 1 (add-to-heap remaining-vertices (list v)))
       :do (setf (svref vertex-candidate v) node))
+    ;; While there are more vertices, greedily pick the one with the lightest edge
+    ;; (or else, the smallest remaining index), and add it to the forest, then
+    ;; update its neighbors to reflect their distance to the forest.
     (loop :until (is-empty-heap-p remaining-vertices) :do
       (destructuring-bind (vertex . edge) (pop-heap remaining-vertices)
+	;; TRACING: (format t "~D~@[ ~D ~D~]~%" vertex (car edge) (cdr edge))
+	;; Adding the vertex to the forest == removing it from the candidate set.
+	(setf (svref vertex-candidate vertex) nil)
+	;; Add the connecting edge to the forest, if any
 	(when edge
 	  (destructuring-bind (neighbor . weight) edge
 	    (add-edge! spanning-forest vertex neighbor weight)))
-	(setf (svref vertex-candidate vertex) nil) ;; remove from candidate set.
+	;; For each neighbor that is still in the candidate set,
+	;; update the priority queue if the new vertex makes it closer to the forest.
 	(loop :for (neighbor . weight) :in (graph-vertex-edges graph vertex)
 	  :for neighbor-candidate = (svref vertex-candidate neighbor)
 	  :when neighbor-candidate :do
 	  (let ((new-candidate `(,neighbor ,vertex . ,weight)))
 	    (when (vertex-edge-weight< new-candidate (node-item neighbor-candidate))
 	      (decrease-key remaining-vertices neighbor-candidate new-candidate))))))
-   spanning-forest))
+    ;; Return the forest that now contains all vertices and a minimum set of edges.
+    spanning-forest))
