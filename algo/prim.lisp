@@ -44,7 +44,7 @@ add to the GRAPH an edge with given weight linking given vertices."
   (push (cons vertex2 weight) (svref graph vertex1))
   (push (cons vertex1 weight) (svref graph vertex2))
   (incf (svref graph 0) weight)
-  t)
+  (values))
 
 (defun string->integers (string)
   "Parse a string of space-delimited decimal integers as a list of integers"
