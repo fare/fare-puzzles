@@ -30,7 +30,7 @@ For a tutorial on Lisp, see
 |#
 
 #| Namespace pollution prevention; do all our ugly stuff our own package |#
-(cl:defpackage :fibonacci
+(uiop:define-package :fibonacci
   (:nicknames :fare-puzzles/algo/fibonacci)
   (:use #:common-lisp))
 (in-package :fibonacci)
@@ -993,6 +993,33 @@ In any case, yet another different data representation can give
 new directions to your coding.
 You can always refactor your programs some more (not that you should).
 |#
+
+#|
+Another approach, suggested by Paul Hankin, is to consider a generating function
+for the formal series:
+	F(x) = Sum(n:Nat){ fib(n)*x**n }
+	http://paulhankin.github.io/Fibonacci/
+
+The recurrence relation is:
+   Sum(n:Nat){ fib(n+2)*x**(n+2) } = Sum(n:Nat){ fib(n+1)*x**(n+2) } + Sum(n:Nat){ fib(n)*x**(n+2) }
+Or:
+   F(x)-fib(1)*x-fib(0) = (F(x)-fib(0))*x+F(x)*x**2
+   F(x)-x = F(x)*(x**2+x)
+   F(x)*(1-x-x**2) = x
+   F(x) = x/(1-x-x**2)
+
+Now, if phi < A, fib(n+2) < A, so if we compute F(1/A), it will be of the form:
+fib(0)/A**(0*k) + fib(1)/A2**(1*k) + ... + fib(n)/A**-n + A**-(n+1)*(fib(n+1)+ ...)
+where each factor is less than A and the remainder is less than 1
+(exercise: prove it based on fib(n+k) < phi^k fib(n)).
+If we multiply by A**n, then the result modulo A is fib(n).
+If we use A=2**n, then we get the following formula
+(where the first 1+ is a fixup for when A=1):
+|#
+(defun genefib (n)
+  (ldb (byte n 0)
+       (floor (1+ (ash 1 (* n (1+ n))))
+	      (- (ash 1 (* 2 n)) (ash 1 n) 1))))
 
 #|
 So, could you immediately recognize in very-fast-fib
