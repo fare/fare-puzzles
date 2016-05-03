@@ -5,7 +5,7 @@
 
 ;; The most elaborate interface I ever used was the play-game macro.
 ;; example:
- (asdf:make :fare-puzzle/words/with-friends)
+ (asdf:make :fare-puzzles/words/with-friends)
  (fare-puzzle/words/with-friends:play-game
    (7 7 :d "hello")
    "worldab"))
@@ -53,11 +53,11 @@ I guide to Words With Friends can be found here:
 
 |#
 
-(uiop:define-package :fare-puzzle/words/with-friends
+(uiop:define-package :fare-puzzles/words/with-friends
   (:use :cl :fare-utils :uiop :inferior-shell)
   (:export #:play-game))
 
-(in-package :fare-puzzle/words/with-friends)
+(in-package :fare-puzzles/words/with-friends)
 
 (declaim (optimize (speed 1) (debug 3) (safety 3))
          #+sbcl (sb-ext:muffle-conditions sb-ext:compiler-note))
@@ -342,24 +342,49 @@ values indicating a center square or multiplier bonus."
   "Make and return an empty board"
   (make-array '(15 15) :initial-element '(nil . nil)))
 
-(defun make-initial-board ()
+(defparameter *scrabble-tiles*
+  '((*center* 7 7)
+    (*triple-letter* 6 6)
+    (*double-letter* 5 5)
+    (*double-word* 4 4)
+    (*double-word* 3 3)
+    (*double-word* 2 2)
+    (*double-word* 1 1)
+    (*triple-word* 0 0)
+    (*triple-word* 0 7)
+    (*double-letter* 0 3)
+    (*triple-letter* 1 5)
+    (*double-letter* 2 6)
+    (*double-letter* 3 7))
+  "Special tile specification for Scrabble")
+
+(defparameter *wwf-tiles*
+  '((*center* 7 7)
+    (*triple-word* 0 3)
+    (*double-letter* 1 2)
+    (*triple-letter* 0 6)
+    (*double-word* 1 5)
+    (*double-letter* 2 4)
+    (*triple-letter* 3 3)
+    (*double-word* 3 7)
+    (*double-letter* 4 6)
+    (*triple-letter* 5 5))
+  "Special tile specification for Words With Friends")
+
+(defun make-initial-board (&optional (game-spec :wwf))
   "Make and return an initial board for words-with-friends"
-  (let ((b (make-blank-board)))
+  (let ((b (make-blank-board))
+	(tiles (ecase game-spec
+		 (:scrabble *scrabble-tiles*)
+		 (:wwf *wwf-tiles*))))
     (labels ((o (c x y) (setf (aref b x y) (cons nil c)))
              (o- (c x y) (o c x y) (o c (- 14 x) y))
              (o+ (c x y) (o- c x y) (o- c x (- 14 y)))
              (o* (c x y) (o+ c x y) (o+ c y x)))
-      (o* *center* 7 7)
-      (o* *triple-word* 0 3)
-      (o* *double-letter* 1 2)
-      (o* *triple-letter* 0 6)
-      (o* *double-word* 1 5)
-      (o* *double-letter* 2 4)
-      (o* *triple-letter* 3 3)
-      (o* *double-word* 3 7)
-      (o* *double-letter* 4 6)
-      (o* *triple-letter* 5 5)
-      b)))
+      (loop :for (special x y) :in tiles :do
+	(o* (symbol-value special) x y)))
+    b))
+
 
 (defun copy-board (board)
   "Copy a board data-structure"
@@ -553,6 +578,7 @@ Assumes (valid-move-p x y direction word board)."
                  (case v ;; word multiplier premium square?
                    (#.*triple-word* 3)
                    (#.*double-word* 2)
+                   (#.*center* 2) ;; in Scrabble. Is it also the same in WWF ?
                    (otherwise 1))))
             (incf new-letters)
             (multiple-value-bind (crossword offset)
@@ -778,10 +804,10 @@ generate all the joker positions to play said WORD with said LETTERS"
   (show-board)
   (format t "player ~A to move. Score: ~{~A ~A~}~%" *player* *score*)
   (finish-output))
-(defun reset-game ()
+(defun reset-game (&optional game-spec)
   "Reset game to initial state."
   (ensure-dictionary)
-  (setf *board* (make-initial-board)
+  (setf *board* (make-initial-board game-spec)
         *player* 0
         *score* '(0 0)))
 
@@ -824,10 +850,10 @@ update the board; show the new state; return the score"
       (show-game))
     score))
 
-(defun do-play-game (moves letters)
+(defun do-play-game (game-spec moves letters)
   "Given a list of moves as arguments on which to apply PLAY-AT,
 and a set of LETTERS, list possible moves."
-  (reset-game)
+  (reset-game game-spec)
   (dolist (move moves)
     (apply 'play-at move))
   (possible-moves letters))
@@ -835,6 +861,7 @@ and a set of LETTERS, list possible moves."
 (defmacro play-game (&rest game)
   "Given a list of moves followed by a set of LETTERS as string,
 re-play the game and list possible next moves"
-  (let ((letters (car (last game)))
-        (moves (butlast game)))
-  `(do-play-game ',moves ,letters)))
+  (let ((game-spec (if (keywordp (car game)) (pop game) :wwf))
+	(letters (car (last game)))
+	(moves (butlast game)))
+  `(do-play-game ,game-spec ',moves ,letters)))
