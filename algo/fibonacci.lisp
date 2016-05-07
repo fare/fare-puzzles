@@ -122,13 +122,13 @@ available to your usual distribution.
 ;;; In case you don't have the memoization software package,
 ;;; here is a short reimplementation of just the functionality we use.
 #-memoization
+(eval-when (:load-toplevel :execute :compile-toplevel)
 (cl:defpackage #:memoization
   (:use #:common-lisp)
   (:export #:memoize #:unmemoize
 	   #:define-memo-function
 	   #:memoizing #:memo-lambda))
-#-memoization
-(in-package :memoization)
+(in-package :memoization))
 #-memoization
 (eval-when (:load-toplevel :execute :compile-toplevel)
 (defun compute-memoized-function (f h args)
@@ -820,7 +820,8 @@ like all Fibonacci matrices are.
 Thus, you obtain the following optimized function,
 that to me is about 3 times faster than the above "fast-fib".
 |#
-(defun very-fast-fib (n)
+(defun very-fast-fib-2 (n)
+  "computes fib(n) *and* fib(n+1)"
   (declare (optimize (speed 3) (safety 0) (debug 0)))
   (check-type n fixnum)
   (let ((a 0) (b 1)  ;;; the matrix to exponentiate
@@ -834,7 +835,12 @@ that to me is about 3 times faster than the above "fast-fib".
       do (psetq n (ash n -1) ;;; halving the exponent
 		a (+ (* a a) (* b b))
 		b (* b (+ a c))) ;;; squaring the current matrix
-      finally (return p))))
+      finally (return (values p q))))) ;; return the two values.
+
+(defun very-fast-fib (n)
+  "computes just fib(n)"
+  (if (zerop n) 0 (nth-value 1 (very-fast-fib-2 (1- n)))))
+
 
 #| Always check your implementation... |#
 #+test
@@ -860,6 +866,18 @@ and unlike specialized algebra packages, Lisp implementations
 do not usually have a top-of-the-line implementation for such big numbers.
 You might want to hack your own (and contribute it back to SBCL/CMUCL?).
 Ouch.
+|#
+
+#|
+I admit I lied a bit when I said it was polylog: the number of arithmetic operations
+is indeed polylog, but as we deal with ever bigger numbers, the time taken for a given
+operation grows at least as fast as the size of the resulting numbers.
+Therefore for very large numbers, the last few operations will dominate, and
+the total time for the calculation will be dominated by a factor of the order
+   O(n**a) where a = log(phi)/log(2) = 0.694241911722954...
+or even worse, a factor of multiplication of numbers that large, which will be
+   O(n**(a*log(3)/log(2))) if using Karatsuba multiplication, so 1.10034739650985...
+and some O((n**a)*log(n)*log(log n)) if using the Schönhage–Strassen algorithm, etc.
 |#
 
 #|
@@ -913,7 +931,7 @@ a simple algorithm for computing the Nth Fibonacci number is as follows:
 (defvar *phi* (/ (+ 1 (sqrt 5.0d0)) 2))
 (defun rfib (n)
   ;; loses precision starting with n=38
-  (values (round (/ (- (expt *phi* n) (expt (- *phi*) (- n))) (sqrt 5)))))
+  (values (round (/ (- (expt *phi* n) (expt (- *phi*) (- n))) (sqrt 5d0)))))
 #+test
 (loop for i below 50 collect (rfib i))
 #|
@@ -997,32 +1015,200 @@ You can always refactor your programs some more (not that you should).
 #|
 Another approach, suggested by Paul Hankin, is to consider a generating function
 for the formal series:
-	F(x) = Sum(n:Nat){ fib(n)*x**n }
-	http://paulhankin.github.io/Fibonacci/
+   G(x) = Sum(0<=n)(fib(n)*x**n)
+   http://paulhankin.github.io/Fibonacci/
 
-The recurrence relation is:
-   Sum(n:Nat){ fib(n+2)*x**(n+2) } = Sum(n:Nat){ fib(n+1)*x**(n+2) } + Sum(n:Nat){ fib(n)*x**(n+2) }
+Summing the recurrence for fib, we get:
+   Sum(0<=n)(fib(n+2)*x**(n+2)) = Sum(0<=n)(fib(n+1)*x**(n+2)) + Sum(0<=n)(fib(n)*x**(n+2))
 Or:
-   F(x)-fib(1)*x-fib(0) = (F(x)-fib(0))*x+F(x)*x**2
-   F(x)-x = F(x)*(x**2+x)
-   F(x)*(1-x-x**2) = x
-   F(x) = x/(1-x-x**2)
+   G(x)-fib(1)*x-fib(0) = (G(x)-fib(0))*x+G(x)*x**2
+   G(x)-x = G(x)*(x**2+x)
+   G(x)*(1-x-x**2) = x
+   G(x) = x/(1-x-x**2)
 
-Now, if phi < A, fib(n+2) < A, so if we compute F(1/A), it will be of the form:
-fib(0)/A**(0*k) + fib(1)/A2**(1*k) + ... + fib(n)/A**-n + A**-(n+1)*(fib(n+1)+ ...)
-where each factor is less than A and the remainder is less than 1
-(exercise: prove it based on fib(n+k) < phi^k fib(n)).
-If we multiply by A**n, then the result modulo A is fib(n).
-If we use A=2**n, then we get the following formula
-(where the first 1+ is a fixup for when A=1):
+Note that if A is a suitable power of 10 (or of 2, in binary), then computing
+G(1/A), we get:
+   G(1/10**3) = 000.00100100200300500801302103405508914423337761098859958...
+where in the decimal expansion we can read the values of fib(n) until they
+overflow the number of digits we used and there's a carry onto the previous
+number.
+
+Given n, we can extract the value of fib(n) from this expansion by picking an
+integer A large enough that there is no such overflow (strictly speaking,
+it's A(n), since it depends on n), multiplying by A**n, and extracting the
+unit term by considering the rest modulo A:
+  A**n*G(1/A)
+       = A**n*Sum(0<=k)(fib(k)*A**-k)
+       = Sum(0<=k)(fib(k)*A**(n-k))
+       = Sum(0<=k<=n)(fib(k)*A**(n-k)) + Sum(n<k)(fib(k)*A**(n-k))
+       = fib(0)/A**(n-0) + fib(1)/A**(n-1) + ... + fib(n)*A**0 + Sum(n<=k)(fib(k)*A**(n-k))
+  A**n*G(1/A)
+       = A**n*(1/A)/(1-(1/A)-1/(A**2))
+       = A**n*(1/A)*A**2/(A**2*((1-(1/A)-1/(A**2))))
+       = A**(n+1)/(A**2-A-1) =
+Assuming for now that the last term will be less than 1, we have the euclidian division
+(where the euclidian division div is the lisp operator FLOOR):
+  Sum(0<=k<=n)(fib(k)*A**(n-k)) = A**(n+1) div (A**2-A-1)
+
+Then, modulo A, all the terms of the sum disappear except for k=n, and we find
+this surprising closed formula:
+  fib(n) = (A**(n+1) div (A**2-A-1)) mod A
+
+In practice, A=10**n works, so we have:
 |#
-(defun genefib (n)
-  (ldb (byte n 0)
-       (floor (1+ (ash 1 (* n (1+ n))))
-	      (- (ash 1 (* 2 n)) (ash 1 n) 1))))
+(defun Gsum (n m x)
+  "Compute the partial sum of G for n<=k<=m"
+  (multiple-value-bind (p q) (very-fast-fib-2 n)
+    (loop
+      :for k :from n :below m
+      :for xn = (expt x n) :then (* x xn)
+      :sum (* p xn)
+      :do (psetf p q q (+ p q)))))
+
+
+(defun genefib1 (n &optional (a (expt 10 n)))
+  (mod (floor (expt a (1+ n)) (- (* a a) a 1)) a))
 
 #|
-So, could you immediately recognize in very-fast-fib
+The above is remarkable because it's a closed form formula:
+it has no explicit recursion;
+all the recursion is done implicitly in the exponent function.
+Another remarkable thing is that before it extracts fib(n) from the low digits,
+it computes all the earlier fib(i) in the higher digits in a big expansion,
+a very large number with about n*(n+1) digits.
+This gives exact answers, but is very inefficient.
+
+For a little bit of efficiency improvement, we see that A=2**n also works,
+at least for n>=2. Exponents of 2 can be computed cheaply with ASH,
+and modulo A becomes bit access using LDB.
+We add a fudge term to fix the computation for n=1.
+|#
+(defun genefib1b (n &optional (m n))
+  (ldb (byte m 0)
+       (floor (1+ (ash 1 (* m (1+ n))))  ;; 1+ is a corrective fudge for n=1
+	      (- (ash 1 (* 2 m)) (ash 1 m) 1))))
+#|
+How small can we make A?
+
+For the terms after n to sum under 1, we need to choose A large enough that
+   s = Sum(n<k)(fib(k)*A**(n-k)) < 1
+
+We can check manually that the minimum A's for small n are:
+   A(0)=3, A(1)=3, A(2)=4, A(3)=5, A(4)=7, A(5)=10, A(6)=15, A(7)=23...
+
+From the previous closed formula (see function rfib), we know that
+Therefore, with k=n+1+l, we have
+   s = Sum(n<k)(fib(k)*A**(n-k))
+     = Sum(0<=l)(fib(n+1+l)*A**-(1+l))
+     < Sum(0<=l)((phi**n/sqrt(5))*(phi/A)**(1+l)
+     = phi**n/sqrt(5)*(phi/A)/(1-phi/A)
+     = phi**(n+1)/sqrt(5)/A/(1-phi/A)
+     = phi**(n+1)/sqrt(5)/(A-phi)
+     <= 1
+We can solve that as such:
+   A-phi >= phi**(n+1)/sqrt(5)
+   A >= phi + phi**(n+1)/sqrt(5)
+
+But to get A=2**k, and k>=4, it's easier to approximate A from above with:
+   A >= phi**(n+1)/sqrt(5)/(1-phi/16) > phi**(n+1)/sqrt(5)/(1-phi/A)
+   k >= log(phi**(n+1)/sqrt(5)/(1-phi/16))/log(2)
+   k >= n*log(phi)/log(2) + log(phi/(sqrt(5)*(1-phi/16)))/log(2)
+   k >= n*log(phi)/log(2) + B
+with
+   B = log(phi/(sqrt(5)*(1-phi/16)))/log(2) = -0.31291115520113505...
+then we can approximate k from above by using a rational number C/D that is
+strictly larger than log(phi)/log(2), at which point we use
+   k = ceiling((n*C+ceiling(B*D))/D)
+|#
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defparameter *log2-phi* (log *phi* 2) ;; 0.6942419136306174d0
+    "Best floating point approximation to log_2(phi)")
+  (defparameter *log2-phi-rational* (rationalize (+ 1e-16 *log2-phi+*)) ;; 492080547/708802706
+    "A rational number strictly larger than log_2(phi)")
+  (defparameter *log2-phi-numerator* (numerator *log2-phi-rational*) ;; 492080547
+    "Numerator for *log2-phi-rational*")
+  (defparameter *log2-phi-denominator* (denominator *log2-phi-rational*) ;; 708802706
+    "Denominator for *log2-phi-rational*")
+  (defparameter *b* (log (/ *phi* (* (sqrt 5) (- 1 (/ *phi* 16)))) 2) ;; -0.31291115520113505d0
+    "Base factor for computing A(n)")
+  (defparameter *adjustment* (ceiling (* *b* *log2-phi-denominator*))
+    "Adjustment for computing A(n)"))
+
+(defun min-a (n)
+  "a(n) must be at least min-a(n)"
+  (ceiling (+ *phi* (/ (expt *phi* (1+ n)) (sqrt 5)))))
+
+(defun series-remainder (n a l)
+  (coerce (* (expt a n) (Gsum (+ n 1) (+ n 1 l) (/ a))) 'double-float))
+
+(defun a-bits (n)
+  "Enough bits to use to compute fib(n) using a generating function X/(1-X-X**2)"
+  (check-type n (integer 0 #.most-positive-fixnum))
+  (max 4 (ceiling (+ (* n #.*log2-phi-numerator*) #.*adjustment*) #.*log2-phi-denominator*)))
+
+(defun a (n)
+  "An integer suitable large to use to compute fib(n) using a generating function X/(1-X-X**2)"
+  (ash 1 (a-bits n)))
+
+(defun genefib2 (n)
+  (genefib1 n (a n)))
+
+(defun genefib2b (n)
+  (genefib1b n (a-bits n)))
+
+#|
+Now, we've optimized the number of bits of precision needed, but we still have
+this very unwieldly division of an overly large number that contains way more
+digits than needed. Wouldn't it be nice to simplify the formula so that we
+don't have to do that much computations, using only modular operations?
+
+First note that when we have a euclidian division,
+   Sum(0<=k<=n)(fib(k)*A**(n-k)) = A**(n+1) div (A**2-A-1)
+and we call the quotient q and the remainder r, then we have the exact formula:
+   A**(n+1) = q * (A**2-A-1) + r
+then modulo A, we have
+   0 = q*-1 + r (mod A)
+or
+   q = r (mod A)
+and since q = fib(n) (mod A), we find the closed formula:
+   fib(n) = (A**(n+1) mod (A**2-A-1)) mod A
+
+This is once again a remarkable closed formula, and this time,
+we only need modular exponentiation, and this formula, in addition to being closed,
+leads to an efficient algorithm with the correct asymptotic behavior!
+|#
+(defun genefib3 (n &optional (a (a n)))
+  (mod (mod (expt a (1+ n)) (- (* a a) a 1)) a))
+
+#|
+Now, if your implementation doesn't specially optimize modular exponentiation,
+you can still get semi-decent performance by computing exponentiation modulo b
+using the trick as matrix exponentiation.
+|#
+
+(defun multmod (x y b)
+  "Compute X*Y modulo B"
+  (mod (* x y) b))
+
+(defun exptmod (x e b)
+  "Compute X**E modulo B"
+  (generic-expt (lambda (x y) (multmod x y b)) x e 1))
+
+(defun genefib4 (n)
+  (let* ((a (a n))
+	 (b (- (* a a) a 1))
+	 (r (exptmod a (1+ n) b)))
+    (mod r a)))
+
+
+#|
+This function is not quite as fast as very-fast-fib, yet seems to have the correct
+general asymptotic behavior, and could be further accelerated using known techniques.
+Further optimization is left as an exercise to the reader.
+|#
+
+#|
+So, could you immediately recognize in very-fast-fib or genefib4
 the function originally defined by bogo-fib? No? What a shame!
 Yet if and when you get a bit used to the refactoring techniques used above,
 you will be able to match that pattern.
@@ -1043,6 +1229,9 @@ the most relevant algorithm is being used at any time.
 Hence, when a user invokes bogo-fib into the enhanced system
 with high optimization enabled, some variant of very-fast-fib will be invoked,
 short-circuited by some well-tuned table lookup for small cases.
+
+PS: This work has actually been done!
+	http://kukuruku.co/hub/algorithms/automatic-algorithms-optimization-via-fast-matrix-exponentiation
 |#
 
 #|
