@@ -928,7 +928,8 @@ Oh, and as for people who know this formula obtained by solving
 the linear recurrence relation in the Fibonacci sequence,
 a simple algorithm for computing the Nth Fibonacci number is as follows:
 |#
-(defvar *phi* (/ (+ 1 (sqrt 5.0d0)) 2))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defvar *phi* (/ (+ 1 (sqrt 5.0d0)) 2)))
 (defun rfib (n)
   ;; loses precision starting with n=38
   (values (round (/ (- (expt *phi* n) (expt (- *phi*) (- n))) (sqrt 5d0)))))
@@ -1013,8 +1014,8 @@ You can always refactor your programs some more (not that you should).
 |#
 
 #|
-Another approach, suggested by Paul Hankin, is to consider a generating function
-for the formal series:
+Another approach to computing fib(n), suggested by Paul Hankin, is
+to consider a generating function for the formal series:
    G(x) = Sum(0<=n)(fib(n)*x**n)
    http://paulhankin.github.io/Fibonacci/
 
@@ -1123,7 +1124,7 @@ strictly larger than log(phi)/log(2), at which point we use
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *log2-phi* (log *phi* 2) ;; 0.6942419136306174d0
     "Best floating point approximation to log_2(phi)")
-  (defparameter *log2-phi-rational* (rationalize (+ 1e-16 *log2-phi+*)) ;; 492080547/708802706
+  (defparameter *log2-phi-rational* (rationalize (+ 1e-16 *log2-phi*)) ;; 492080547/708802706
     "A rational number strictly larger than log_2(phi)")
   (defparameter *log2-phi-numerator* (numerator *log2-phi-rational*) ;; 492080547
     "Numerator for *log2-phi-rational*")
@@ -1202,9 +1203,52 @@ using the trick as matrix exponentiation.
 
 
 #|
-This function is not quite as fast as very-fast-fib, yet seems to have the correct
-general asymptotic behavior, and could be further accelerated using known techniques.
-Further optimization is left as an exercise to the reader.
+This function while not quite as fast as very-fast-fib, has the same general
+asymptotic behavior, and could be further accelerated using known techniques
+(such further optimization is left as an exercise to the reader).
+How much faster can it be made, and how will it then compare to very-fast-fib?
+Well, if you squint enough, you might realize that it's actually the very same
+algorithm in hiding!
+
+When very-fast-fib represents consecutive Fibonacci numbers as a pair x y,
+this algorithm represents them as a single integer x+y*A,
+x and y being the base-A "digits" of this sum.
+A is chosen large enough to ensure that there is never any carry over
+from one base-A "digit" to another during any of the operations.
+Multiplication by A corresponds to taking the next pair of numbers,
+at which point the modulo B=A**2-A-1 means that
+the new x will the old y (from the 1 in A**2 -> A+1),
+and the new y will be the sum of the old x and y
+(of x from multiplying by A, of y from the A in A**2 -> A+1).
+The genefib4 algorithm thus cannot in general be made as fast as
+very-fast-fib, since it does as much work, plus a some extra because
+the general-purpose additions, multiplications and divisions it uses
+have to handle administrative details for potential carry overs that
+won't happen (notably handling lots of leading zeroes in front of x).
+Now of course, if these arithmetic operations are specially optimized
+to account for the fact that e.g. when A is a power of two,
+modulo A is just masking some bits, which can itself be optimized into
+shuffling two small integer registers rather than
+packing information into a single big one,
+whereas modulo B is then just a register swap and an addition.
+Then we are back to the very same algorithm as very-fast-fib;
+but without those specializations, we must expect a slowdown
+by a sizeable constant factor.
+
+Besides the curiosity factor of a closed formula, this algorithm can also
+suggest how common algorithms taking a predictable number of steps
+on a determined amount of data can be encoded in terms of regular arithmetic
+operations on a single integer. Such encodings can be used to relate algorithms
+to arithmetics and prove the impossibility of some computations
+(such as with Gödel's theorem); they can also be used to escape the strictures
+of a restricted programming language (for instance, as might be designed by
+incompetent bondage-and-discipline authoritarians) and abuse such systems
+into computing anyway what the idiots in charge merely made inconvenient to
+the honest users, not impossible to actual abusers (see also the topic of
+Weird Machines and language-theoretic security). In a positive way, it can
+be used to amplify the power of e.g. homomorphic encryption
+	https://en.wikipedia.org/wiki/Weird_machine
+	https://en.wikipedia.org/wiki/Homomorphic_encryption
 |#
 
 #|
