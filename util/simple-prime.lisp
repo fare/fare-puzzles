@@ -1,6 +1,7 @@
 ;; Dealing with small prime numbers (say up to 1e8, if using a few GiB of memory)
 ;; NB: This code maintains global tables and is generally not thread-safe.
-;; See also "The Genuine Sieve of Erathostenes" https://www.cs.hmc.edu/~oneill/papers/Sieve-JFP.pdf
+;; See also "The Genuine Sieve of Erathostenes" by Melissa E. O'Neill:
+;;      https://www.cs.hmc.edu/~oneill/papers/Sieve-JFP.pdf
 
 (uiop:define-package :fare-puzzles/util/simple-prime
   (:use :uiop :cl
@@ -107,16 +108,16 @@ by a factor of the wheel size, and its position in the wheel."
                    (when (> p n) (return))
                    (when (plusp (aref *prime-sieve* p))
                      (vector-push-extend p *primes*)
-                     (loop with p2 = (* p p)
-                           for q from (if (>= p2 m) p2 (* p (ceiling m p))) to n by p do
-                             (setf (aref *prime-sieve* q) 0))))))
+                     (loop :with p2 = (* p p)
+		       :for q :from (if (>= p2 m) p2 (* p (ceiling m p))) :to n :by p :do
+		       (setf (aref *prime-sieve* q) 0))))))
       (let ((p (largest-known-prime)))
         (when (< p n)
-          (loop with wp = (wheel-position wheel p) do
-                (multiple-value-setq (p wp) (wheel-next wheel p wp))
-                (when (> p n) (return))
-                (when (plusp (aref *prime-sieve* p))
-                  (vector-push-extend p *primes*)))))))
+          (loop :with wp = (wheel-position wheel p) :do
+	    (multiple-value-setq (p wp) (wheel-next wheel p wp))
+	    (when (> p n) (return))
+	    (when (plusp (aref *prime-sieve* p))
+	      (vector-push-extend p *primes*)))))))
   (make-array (1+ n) :displaced-to *prime-sieve* :element-type 'bit))
 
 
@@ -128,7 +129,7 @@ by a factor of the wheel size, and its position in the wheel."
     (adjust-array *pi* (1+ n))
     (setf (fill-pointer *pi*) (1+ n))
     (erathostenes-sieve n)
-    (loop for m from m to n do
+    (loop :for m :from m :to n :do
       (setf (aref *pi* m) (incf sp (aref *prime-sieve* m))))
     sp))
 
@@ -144,15 +145,15 @@ by a factor of the wheel size, and its position in the wheel."
   (check-type n (integer 1 *))
   (while-collecting (f)
     (loop
-      with max
-      for i from 1
-      until (= 1 n) do
-        (let ((prime (nth-prime i)))
-          (unless max
-            (setf max (isqrt n)))
-          (when (> prime max)
-            (f n) (return))
-          (loop (multiple-value-bind (m r) (floor n prime)
-                  (unless (zerop r) (return))
-                  (setf n m max nil)
-                  (f prime)))))))
+      :with max ;; biggest number we have to test before we can be sure n is prime
+      :for i :from 1
+      :for prime = (nth-prime i) :do
+      (unless max ;; isqrt is somewhat expensive, so recompute the limit lazily
+	(setf max (isqrt n)))
+      (when (> prime max)
+	(f n) (return))
+      (loop ;; divide by this prime as many times as possible
+	(multiple-value-bind (m r) (floor n prime)
+	  (unless (zerop r) (return))
+	  (f prime)
+	  (setf n m max nil)))))))
