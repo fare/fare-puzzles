@@ -156,4 +156,4 @@ by a factor of the wheel size, and its position in the wheel."
 	(multiple-value-bind (m r) (floor n prime)
 	  (unless (zerop r) (return))
 	  (f prime)
-	  (setf n m max nil)))))))
+	  (setf n m max nil))))))
