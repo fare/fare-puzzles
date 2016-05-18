@@ -1056,6 +1056,7 @@ this surprising closed formula:
   fib(n) = (A**(n+1) div (A**2-A-1)) mod A
 
 In practice, A=10**n works, so we have:
+  fib(n) = (10**(n*(n+1)) div (10**(2*n)-10**n-1)) mod 10**n
 |#
 (defun Gsum (n m x)
   "Compute the partial sum of G for n<=k<=m"
@@ -1132,7 +1133,7 @@ strictly larger than log(phi)/log(2), at which point we use
     "Denominator for *log2-phi-rational*")
   (defparameter *b* (log (/ *phi* (* (sqrt 5) (- 1 (/ *phi* 16)))) 2) ;; -0.31291115520113505d0
     "Base factor for computing A(n)")
-  (defparameter *adjustment* (ceiling (* *b* *log2-phi-denominator*))
+  (defparameter *adjustment* (ceiling (* *b* *log2-phi-denominator*)) ;; -221792273
     "Adjustment for computing A(n)"))
 
 (defun min-a (n)
