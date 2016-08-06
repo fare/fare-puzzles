@@ -41,18 +41,19 @@ open Printf
 let letter_index c = int_of_char c - int_of_char 'a'
 ;;
 
-let is_better_answer_ a b =
+let is_better_answer a b =
   match compare (String.length a) (String.length b) with
     -1 -> true
   | 0 -> ( String.compare a b = -1 )
   | _ -> false
 ;;
 
+(*
 let is_better_answer a b =
   let answer = is_better_answer_ a b in
      Printf.printf "\"%s\" better than \"%s\" => %s\n" a b (if answer then "true" else "false") ;
   answer
-;;
+;;*)
 
 let (--) i j =
     let rec aux n acc =
@@ -122,11 +123,11 @@ let answer (chunk, word) =
 	end
       in
       begin
-	Printf.printf "%d \"%s\" " i previous_best;
+	(*Printf.printf "%d \"%s\" " i previous_best;
 	print_int_list_array previous_reductions;
 	Printf.printf " => %c " chunk.[i];
 	print_int_list positions;
-	Printf.printf "\n";
+	Printf.printf "\n";*)
 
 	parse.(i) <- (previous_best, previous_reductions) ;
 	reductions.(0) <- [i+1] ;
@@ -162,6 +163,8 @@ let tests () =
      ("lololololololol", "lolol", "loloo");
      ("lllllloololololllollo", "llo", "lol");
      ("banana", "an", "ba");
+     ("aaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaa", "");
+
 (*
 *)
  ]
