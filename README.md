@@ -17,4 +17,4 @@ Contents:
 * [ita/](ita/) has recruiting problems from ITA Software.
 * [misc/](misc/) has miscellaneous exercises from the Internet.
 * [words/](words/) has a few word-manipulation problems.
-
+* [foobar/](foobar/) solves a few exercises from [Google Foobar](https://www.google.com/foobar/).
