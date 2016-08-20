@@ -6,10 +6,11 @@
 (uiop:define-package :fare-puzzles/util/simple-prime
   (:use :uiop :cl
         :fare-puzzles/util/cache)
+  (:import-from :cl-utilities #:expt-mod)
   (:export
    #:nth-prime
    #:next-prime-above
-   #:prime-p
+   #:prime-p #:prime-p/sieve #:prime-p/miller-rabin
    #:erathostenes-sieve
    #:pi-function
    #:divides-p
@@ -68,8 +69,9 @@ by a factor of the wheel size, and its position in the wheel."
         do (multiple-value-setq (n wp) (wheel-next *wheel* n))
         when (prime-p n) return n))
 
-(defun prime-p (n)
-  "Given a small integer N, is it a prime number? Answer using Erathostenes' sieve."
+(defun prime-p/sieve (n)
+  "Given a small integer N, is it a prime number?
+Answer using Erathostenes' sieve."
   (block nil
     (when (< n (fill-pointer *prime-sieve*))
       (return (plusp (aref *prime-sieve* n))))
@@ -157,3 +159,54 @@ by a factor of the wheel size, and its position in the wheel."
 	  (unless (zerop r) (return))
 	  (f prime)
 	  (setf n m max nil))))))
+
+(defun witness-of-compositeness-p (a n n-1 r d)
+  (declare (type integer a n n-1 r d))
+  ;; (assert (= (1- n) n-1 (* (expt 2 r) d)))
+  (let ((x (expt-mod a d n)))
+    (block nil
+      (when (or (= x 1) (= x n-1))
+	(return nil)) ;; not a witness
+      (loop :repeat (1- r) :do
+	(setf x (expt-mod x 2 n))
+	(when (= x 1) (return t)) ;; witness that n is composite
+	(when (= x n-1) (return nil)) ;; not a witness
+	:finally (return t))))) ;; witness that n is composite
+
+(defun valuation-of-2 (n)
+  "How many times does 2 divide N? Return -1 for 0."
+  (1- (integer-length (logxor n (1- n)))))
+
+(defun prime-p/miller (n as)
+  "Is integer N a prime number? Use Miller method to check,
+with a list of candidate witnesses AS."
+  (let* ((n-1 (- n 1))
+	 (r (valuation-of-2 n-1))
+	 (d (ash n-1 (- r))))
+    (loop :for a :in as
+      :when (witness-of-compositeness-p a n n-1 r d)
+      :return nil
+      :finally (return t))))
+
+(defun prime-p/miller-rabin (n)
+  "Is integer N a prime number? Use Rabin-Miller method to check."
+  (let* ((n-1 (- n 1))
+	 (r (valuation-of-2 n-1))
+	 (d (ash n-1 (- r))))
+    ;; Each independent test reduces the probability of primality by 1/4
+    ;; We add a constant 4^16 = 2^64 error factor.
+    (loop :repeat (+ 16 (ceiling (integer-length n) 4))
+      :for a = (+ 2 (random (- n 3)))
+      :when (witness-of-compositeness-p a n n-1 r d)
+      :return nil
+      :finally (return t))))
+
+(defun prime-p (n)
+  "Is integer N a prime number?"
+  (check-type n (integer 0 *))
+  (cond
+    ((< n 2) nil)
+    ((< n 100) (prime-p/sieve n))
+    ((< n 3317044064679887385961981)
+	(prime-p/miller n '(2 3 5 7 11 13 17 19 23 29 31 37 41)))
+    (t (prime-p/miller-rabin n))))
