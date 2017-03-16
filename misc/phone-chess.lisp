@@ -110,7 +110,7 @@ Suggestions I failed to properly convey:
   and the traversal strategy (including parallelism) can be written in "direct style"
   without having to care about carrying state for the other part, and can be modified modularly.
 
-* If you language doesn't have first-class continuations, an equivalent but much heavier
+* If your language doesn't have first-class continuations, an equivalent but much heavier
   solution is to use monads to implement them and/or to directly implement one side
   of the language (say, non-determinism with a depth-first traversal strategy).
   Writing depth-first vs breadth-first in direct style can be just switching the work queue
