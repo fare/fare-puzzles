@@ -4,7 +4,7 @@
 
 ;; At ILC'2012, Tak challenged us to write a palindromic program,
 ;; modulo parenthesis inversion,
-;; and without using any reader macro ;; such as ' ` ;
+;; and without using any reader macro such as ' ` ;
 ;; His next slide had a solution, which additionally was a function definition,
 ;; but it had unused variable warnings in SBCL.
 ;; I could immediately come up with the following program,
@@ -82,7 +82,8 @@
 ) ; 943
 
 ;; Precursor to the solution... use it with #. !
+(pqp
 (let((q'(lambda(q)(labels((r(x)(if(atom x)(intern(reverse(string x)))(
 reverse(mapcar #'r x))))(q(q)(subst q(eq q q)'(defun p(&aux defun nufed
 quote etouq(xua& etouq)p tsil)((lambda(q)(setq q 't tsil q nufed(eval(
-list q(list'quote q)))))etouq)))))(nconc(q q)(r(q q)))))))(eval`(,q',q)))
+list q(list'quote q)))))etouq)))))(nconc(q q)(r(q q)))))))(eval`(,q',q))))
