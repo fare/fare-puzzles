@@ -111,15 +111,15 @@ Answer using Erathostenes' sieve."
                    (when (plusp (aref *prime-sieve* p))
                      (vector-push-extend p *primes*)
                      (loop :with p2 = (* p p)
-		       :for q :from (if (>= p2 m) p2 (* p (ceiling m p))) :to n :by p :do
-		       (setf (aref *prime-sieve* q) 0))))))
+                       :for q :from (if (>= p2 m) p2 (* p (ceiling m p))) :to n :by p :do
+                       (setf (aref *prime-sieve* q) 0))))))
       (let ((p (largest-known-prime)))
         (when (< p n)
           (loop :with wp = (wheel-position wheel p) :do
-	    (multiple-value-setq (p wp) (wheel-next wheel p wp))
-	    (when (> p n) (return))
-	    (when (plusp (aref *prime-sieve* p))
-	      (vector-push-extend p *primes*)))))))
+            (multiple-value-setq (p wp) (wheel-next wheel p wp))
+            (when (> p n) (return))
+            (when (plusp (aref *prime-sieve* p))
+              (vector-push-extend p *primes*)))))))
   (make-array (1+ n) :displaced-to *prime-sieve* :element-type 'bit))
 
 
@@ -144,6 +144,7 @@ Answer using Erathostenes' sieve."
       (zerop (mod n f))))
 
 (defun factor (n)
+  "Given an integer N, return a non-decreasing list of its prime factors"
   (check-type n (integer 1 *))
   (while-collecting (f)
     (loop
@@ -151,27 +152,29 @@ Answer using Erathostenes' sieve."
       :for i :from 1
       :for prime = (nth-prime i) :do
       (unless max ;; isqrt is somewhat expensive, so recompute the limit lazily
-	(setf max (isqrt n)))
+        (setf max (isqrt n)))
       (when (> prime max)
-	(f n) (return))
+        (f n) (return))
       (loop ;; divide by this prime as many times as possible
-	(multiple-value-bind (m r) (floor n prime)
-	  (unless (zerop r) (return))
-	  (f prime)
-	  (setf n m max nil))))))
+        (multiple-value-bind (m r) (floor n prime)
+          (unless (zerop r) (return))
+          (f prime)
+          (setf n m max nil))))))
 
 (defun witness-of-compositeness-p (a n n-1 r d)
-  (declare (type integer a n n-1 r d))
+  "Given integers A and N, and ancillary data"
+  (declare (type (integer 0 *) a n n-1 r d))
   ;; (assert (= (1- n) n-1 (* (expt 2 r) d)))
+  ;; (assert (oddp d))
   (let ((x (expt-mod a d n)))
     (block nil
       (when (or (= x 1) (= x n-1))
-	(return nil)) ;; not a witness
+        (return nil)) ;; not a witness
       (loop :repeat (1- r) :do
-	(setf x (expt-mod x 2 n))
-	(when (= x 1) (return t)) ;; witness that n is composite
-	(when (= x n-1) (return nil)) ;; not a witness
-	:finally (return t))))) ;; witness that n is composite
+        (setf x (expt-mod x 2 n))
+        (when (= x 1) (return t)) ;; witness that n is composite
+        (when (= x n-1) (return nil)) ;; not a witness
+        :finally (return t))))) ;; witness that n is composite
 
 (defun valuation-of-2 (n)
   "How many times does 2 divide N? Return -1 for 0."
@@ -181,8 +184,8 @@ Answer using Erathostenes' sieve."
   "Is integer N a prime number? Use Miller method to check,
 with a list of candidate witnesses AS."
   (let* ((n-1 (- n 1))
-	 (r (valuation-of-2 n-1))
-	 (d (ash n-1 (- r))))
+         (r (valuation-of-2 n-1))
+         (d (ash n-1 (- r))))
     (loop :for a :in as
       :when (witness-of-compositeness-p a n n-1 r d)
       :return nil
@@ -191,8 +194,8 @@ with a list of candidate witnesses AS."
 (defun prime-p/miller-rabin (n)
   "Is integer N a prime number? Use Rabin-Miller method to check."
   (let* ((n-1 (- n 1))
-	 (r (valuation-of-2 n-1))
-	 (d (ash n-1 (- r))))
+         (r (valuation-of-2 n-1))
+         (d (ash n-1 (- r))))
     ;; Each independent test reduces the probability of primality by 1/4
     ;; We add a constant 4^16 = 2^64 error factor.
     (loop :repeat (+ 16 (ceiling (integer-length n) 4))
@@ -208,5 +211,5 @@ with a list of candidate witnesses AS."
     ((< n 2) nil)
     ((< n 100) (prime-p/sieve n))
     ((< n 3317044064679887385961981)
-	(prime-p/miller n '(2 3 5 7 11 13 17 19 23 29 31 37 41)))
+        (prime-p/miller n '(2 3 5 7 11 13 17 19 23 29 31 37 41)))
     (t (prime-p/miller-rabin n))))
