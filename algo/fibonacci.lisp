@@ -1175,6 +1175,9 @@ or
 and since q = fib(n) (mod A), we find the closed formula:
    fib(n) = (A**(n+1) mod (A**2-A-1)) mod A
 
+To impress your friends with an easy closed formula, you can use A=10**n, as in:
+fib(n) = (10**(2*n+n) mod 10**(2*n)-10**n-1) mod 10**n
+
 This is once again a remarkable closed formula, and this time,
 we only need modular exponentiation, and this formula, in addition to being closed,
 leads to an efficient algorithm with the correct asymptotic behavior!
