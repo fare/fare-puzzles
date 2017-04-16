@@ -1099,6 +1099,9 @@ We can check manually that the minimum A's for small n are:
    A(0)=3, A(1)=3, A(2)=4, A(3)=5, A(4)=7, A(5)=10, A(6)=15, A(7)=23...
 
 From the previous closed formula (see function rfib), we know that
+   fib(k) = (phi**k-phi**-k)/sqrt(5)
+where phi = (1+sqrt(5))/2
+
 Therefore, with k=n+1+l, we have
    s = Sum(n<k)(fib(k)*A**(n-k))
      = Sum(0<=l)(fib(n+1+l)*A**-(1+l))
@@ -1176,7 +1179,7 @@ and since q = fib(n) (mod A), we find the closed formula:
    fib(n) = (A**(n+1) mod (A**2-A-1)) mod A
 
 To impress your friends with an easy closed formula, you can use A=10**n, as in:
-fib(n) = (10**(2*n+n) mod 10**(2*n)-10**n-1) mod 10**n
+fib(n) = (10**(n**2+n) mod 10**(2*n)-10**n-1) mod 10**n
 
 This is once again a remarkable closed formula, and this time,
 we only need modular exponentiation, and this formula, in addition to being closed,
