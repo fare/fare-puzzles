@@ -6,7 +6,7 @@
 ;;;   http://fare.livejournal.com/59015.html
 
 #|
-In this file, we try to illustrate a few ways in which
+In this file, we use Fibonacci numbers to illustrate a few ways in which
 Lisp allows you to free yourself from limitations to your thinking,
 and find elegant solutions to problems that are difficult
 to even understand when imprisoned in the mindset of less expressive languages.
@@ -29,10 +29,11 @@ For a tutorial on Lisp, see
 	http://www.cliki.net/Online%20Tutorial
 |#
 
-#| Namespace pollution prevention; do all our ugly stuff our own package |#
+#| Namespace pollution prevention; do all our ugly stuff in our own package |#
 (uiop:define-package :fibonacci
   (:nicknames :fare-puzzles/algo/fibonacci)
-  (:use #:common-lisp))
+  (:use :common-lisp)
+  #+asdf3.1 (:import-from :fare-memoization))
 (in-package :fibonacci)
 
 #|
@@ -110,27 +111,30 @@ and properly configure your /etc so as to make the good Lisp stuff
 available to your usual distribution.
 |#
 ;;; First, ensure asdf is available
+#-asdf
 (eval-when (:load-toplevel :execute :compile-toplevel)
   (ignore-errors (require :asdf)))
 ;;; Then, load the memoization package
-#+asdf
+#-fare-memoization
 (eval-when (:load-toplevel :execute :compile-toplevel)
   (ignore-errors
-    (asdf:oos 'asdf:load-op :memoization)
-    (pushnew :memoization *features*)))
+    (unless (find-package :fare-memoization)
+      (asdf:load-system :fare-memoization)
+      (pushnew :fare-memoization *features*))))
 
-;;; In case you don't have the memoization software package,
-;;; here is a short reimplementation of just the functionality we use.
-#-memoization
+;;; In case you don't have the memoization software package, here is
+;;; a short reimplementation of the subset of its functionality that we use.
+#-fare-memoization
 (eval-when (:load-toplevel :execute :compile-toplevel)
-(cl:defpackage #:memoization
-  (:use #:common-lisp)
-  (:export #:memoize #:unmemoize
-	   #:define-memo-function
-	   #:memoizing #:memo-lambda))
-(in-package :memoization))
-#-memoization
+  (unless (find-package :fare-memoization)
+    (cl:defpackage :fare-memoization
+      (:use :common-lisp)
+      (:export #:memoize #:unmemoize
+               #:define-memo-function)))
+(in-package :fare-memoization))
+#-fare-memoization
 (eval-when (:load-toplevel :execute :compile-toplevel)
+  (unless (fboundp 'compute-memoized-function)
 (defun compute-memoized-function (f h args)
   "the basic helper for computing with a memoized function F,
 with a hash-table H, being called with arguments ARGS"
@@ -156,12 +160,7 @@ with a hash-table H, being called with arguments ARGS"
 	      (compute-memoized-function f h args))
 	  (get sym :original-memoized-function)
 	  (cons f h))))
-(defun memoizing (f)
-  (let ((h (make-hash-table :test 'equal)))
-    #'(lambda (&rest args)
-	(compute-memoized-function f h args))))
-(defmacro memo-lambda (formals &body body)
-  `(memoizing #'(lambda ,formals ,@body)))
+;;; This only works if the implementation never optimizes self-calls:
 ;;(defmacro define-memo-function (name formals &body body)
 ;;  `(progn (defun ,name ,formals ,@body) (memoize ',name)))
 (defmacro define-memo-function (name formals &body body)
@@ -172,9 +171,7 @@ with a hash-table H, being called with arguments ARGS"
        (defun ,name (&rest ,args)
          (labels ((,fun ,formals (block ,name ,@body))
                   (,name (&rest ,args) (compute-memoized-function #',fun ,h ,args)))
-           (apply #',name ,args))))))
-(pushnew :memoization *features*)
-)
+           (apply #',name ,args))))))))
 
 ;;; After this digression, back to computing the Fibonacci numbers.
 (in-package :fibonacci)
@@ -182,8 +179,8 @@ with a hash-table H, being called with arguments ARGS"
 #|
 Now, tell your system to memoize the function:
 |#
-#+memoization
-(memoization:memoize 'bogo-fib)
+#+fare-memoization
+(fare-memoization:memoize 'bogo-fib)
 
 #|
 There you go: performance is now made acceptable
@@ -205,9 +202,9 @@ You may reenable it with
 (declaim (optimize (speed 3) (safety 2) (debug 2)))
 |#
 
-#| Tired of writing memoization:... everytime? Use the package. |#
+#| Tired of writing fare-memoization:... everytime? Use the package. |#
 (eval-when (:load-toplevel :execute :compile-toplevel)
-  (use-package :memoization))
+  (use-package :fare-memoization))
 
 #| The following is guaranteed to work even with optimization enabled. |#
 (eval-when (:load-toplevel :execute :compile-toplevel)
