@@ -1094,6 +1094,11 @@ For the terms after n to sum under 1, we need to choose A large enough that
 
 We can check manually that the minimum A's for small n are:
    A(0)=3, A(1)=3, A(2)=4, A(3)=5, A(4)=7, A(5)=10, A(6)=15, A(7)=23...
+In other words, it's A(n)=fib(n+1)+2.
+Indeed, the pair of number (fib(n+1), fib(n)) will be represented as a rest
+A*fib(n+1)+fib(n) modulo A**2-A-1, which is possible iff that number is strictly
+less than A**2-A-1, which is iff fib(n+1) is strictly less than A-1-1/A,
+which is iff fib(n+1) is smaller or equal to A-2.
 
 From the previous closed formula (see function rfib), we know that
    fib(k) = (phi**k-phi**-k)/sqrt(5)
@@ -1102,8 +1107,10 @@ where phi = (1+sqrt(5))/2
 Therefore, with k=n+1+l, we have
    s = Sum(n<k)(fib(k)*A**(n-k))
      = Sum(0<=l)(fib(n+1+l)*A**-(1+l))
-     < Sum(0<=l)((phi**n/sqrt(5))*(phi/A)**(1+l)
-     = phi**n/sqrt(5)*(phi/A)/(1-phi/A)
+     = Sum(0<=l)(phi**(n+1+l)*A**-(1+l)+phi**-(n+1+l)*A**-(1+l))/sqrt(5)
+     = (phi**n/sqrt(5))*Sum(0<=l)((phi/A)**(1+l)) - (phi**-n/sqrt(5))*Sum(0<=l)((phi*A)**-(1+l))
+     = (phi**n/sqrt(5))*(phi/A)/(1-phi/A) - phi**-n/(sqrt(5)*(phi*A-1))
+     < phi**n/sqrt(5)*(phi/A)/(1-phi/A)
      = phi**(n+1)/sqrt(5)/A/(1-phi/A)
      = phi**(n+1)/sqrt(5)/(A-phi)
      <= 1
