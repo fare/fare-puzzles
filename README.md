@@ -7,7 +7,8 @@ by various friends, family members or potential employers. I made a repository f
 to share with friends and family members, and to make it easier to reuse code infrastructure
 between exercises.
 
-Contents:
+Contents
+--------
 
 * [algo/](algo/) has algorithmic problems.
 * [data/](data/) contains a corpus of data imported from other sites for use with some algorithms.
@@ -18,3 +19,11 @@ Contents:
 * [misc/](misc/) has miscellaneous exercises from the Internet.
 * [words/](words/) has a few word-manipulation problems.
 * [foobar/](foobar/) solves a few exercises from [Google Foobar](https://www.google.com/foobar/).
+
+
+Interesting Links
+-----------------
+
+More programming puzzles
+
+* [500 Data structures and algorithms interview questions and their solutions](https://techiedelight.quora.com/500-Data-structures-and-algorithms-interview-questions-and-their-solutions)
