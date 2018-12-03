@@ -1055,16 +1055,6 @@ this surprising closed formula:
 In practice, A=10**n works, so we have:
   fib(n) = (10**(n*(n+1)) div (10**(2*n)-10**n-1)) mod 10**n
 |#
-(defun Gsum (n m x)
-  "Compute the partial sum of G for n<=k<=m"
-  (multiple-value-bind (p q) (very-fast-fib-2 n)
-    (loop
-      :for k :from n :below m
-      :for xn = (expt x n) :then (* x xn)
-      :sum (* p xn)
-      :do (psetf p q q (+ p q)))))
-
-
 (defun genefib1 (n &optional (a (expt 10 n)))
   (mod (floor (expt a (1+ n)) (- (* a a) a 1)) a))
 
@@ -1146,6 +1136,15 @@ strictly larger than log(phi)/log(2), at which point we use
 (defun min-a (n)
   "a(n) must be at least min-a(n)"
   (ceiling (+ *phi* (/ (expt *phi* (1+ n)) (sqrt 5)))))
+
+(defun Gsum (n m x)
+  "Compute the partial sum of G for n<=k<=m"
+  (multiple-value-bind (p q) (very-fast-fib-2 n)
+    (loop
+      :for k :from n :below m
+      :for xn = (expt x n) :then (* x xn)
+      :sum (* p xn)
+      :do (psetf p q q (+ p q)))))
 
 (defun series-remainder (n a l)
   (coerce (* (expt a n) (Gsum (+ n 1) (+ n 1 l) (/ a))) 'double-float))
@@ -1285,7 +1284,7 @@ Hence, when a user invokes bogo-fib into the enhanced system
 with high optimization enabled, some variant of very-fast-fib will be invoked,
 short-circuited by some well-tuned table lookup for small cases.
 
-PS: This work has actually been done!
+PS: This work has actually been done (in Python)!
 	http://kukuruku.co/hub/algorithms/automatic-algorithms-optimization-via-fast-matrix-exponentiation
 |#
 
