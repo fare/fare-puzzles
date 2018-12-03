@@ -211,5 +211,5 @@ with a list of candidate witnesses AS."
     ((< n 2) nil)
     ((< n 100) (prime-p/sieve n))
     ((< n 3317044064679887385961981)
-        (prime-p/miller n '(2 3 5 7 11 13 17 19 23 29 31 37 41)))
+     (prime-p/miller n '(2 3 5 7 11 13 17 19 23 29 31 37 41)))
     (t (prime-p/miller-rabin n))))
