@@ -6,9 +6,13 @@
 ;; The most elaborate interface I ever used was the play-game macro.
 ;; example:
  (asdf:make :fare-puzzles/words/with-friends)
- (fare-puzzle/words/with-friends:play-game
+ (fare-puzzles/words/with-friends:play-game
    (7 7 :d "hello")
    "worldab"))
+;; or:
+(fare-puzzles/words/with-friends:play-game
+   (7 7 :r "gale") (7 7 :d "goat") (7 7 :r "galere") (6 9 :d "za")
+   "ouuaaiaa")
 
 When my friend Cara invited me to play "words with friends",
 she told me that I should only use my brain, or else it would be cheating.
