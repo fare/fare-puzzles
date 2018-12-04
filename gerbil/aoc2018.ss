@@ -1,10 +1,9 @@
 ;; Solutions to https://AdventOfCode.com/2018
 
 (import
-  :std/iter :std/misc/list :std/misc/repr :std/srfi/1 :std/sugar
+  :std/iter :std/misc/list :std/misc/repr :std/srfi/1 :std/srfi/43 :std/sugar
   :clan/utils/assert :clan/utils/base :clan/utils/basic-parsers
-  :clan/utils/generator :clan/utils/hash :clan/utils/number)
-
+  :clan/utils/generator :clan/utils/hash :clan/utils/number :clan/utils/vector)
 
 ;;; DAY 1 https://adventofcode.com/2018/day/1
 
@@ -15,7 +14,7 @@
        (with-syntax ((txt path))
          #'(quote txt))))))
 
-(def day1-input-file (path-expand "aoc2018-1.input" (this-source-directory)))
+(def (day-input-file n) (path-expand (format "aoc2018-~d.input" n) (this-source-directory)))
 
 (def (expect-signed-integer port (base 10))
   (let ((char (peek-char port)))
@@ -37,13 +36,14 @@
     (fun (expect-signed-integer port))
     (expect-and-skip-any-whitespace port)))
 
-(def (day1-input (file day1-input-file))
+(def (day1-input (file (day-input-file 1)))
   (nest
    (generating<-for-each) (λ (yield))
    (call-with-input-file file) (λ (port))
    (for-each-port-signed-integer! port yield)))
 
 (def day1-answer1 (reduce + 0 (list<-generating (day1-input)))) ;; 445
+
 
 (def (generating-decons on-cons on-eof g)
   (let/cc k (on-cons (g (λ () (k (on-eof)))))))
@@ -92,9 +92,7 @@
 
 ;;; DAY 2 https://adventofcode.com/2018/day/2
 
-(def day2-input-file (path-expand "aoc2018-2.input" (this-source-directory)))
-
-(def (day2-input (file day2-input-file)) (read-file-lines file))
+(def (day2-input (file (day-input-file 2))) (read-file-lines file))
 
 (def (hash-increment! table key (increment 1))
   (let ((previous (hash-ref table key 0)))
@@ -143,15 +141,16 @@
 (def (list-for-each-pair! l1 l2 f)
   (for-each! l1 (λ (x1) (for-each! l2 (λ (x2) (f x1 x2))))))
 
+(def (list-for-each-head-tail! l f)
+  (letrec ((r (λ-match
+               ([] (void))
+               ([head . tail]
+                (f head tail)
+                (r tail)))))
+    (r l)))
+
 (def (list-for-each-couple! l f)
-  (letrec ((r1 (λ (l)
-                 (unless (null? l)
-                   (r2 (car l) (cdr l)))))
-           (r2 (λ (head tail)
-                 (unless (null? tail)
-                   (for-each! tail (λ (x) (f head x)))
-                   (r1 tail)))))
-    (r1 l)))
+  (list-for-each-head-tail! l (λ (h t) (for-each! t (cut f h <>)))))
 
 (def day2-answer2
   (nest
@@ -160,3 +159,99 @@
    (when-let (r (string-pair-without-single-difference x y)))
    (k r))) ;; "megsdlpulxvinkatfoyzxcbvq"
 
+
+;;; DAY 3 https://adventofcode.com/2018/day/3
+
+(def (parse-day3-line port)
+  (nest
+   (begin ((expect-maybe-char #\#) port))
+   (let ((id (expect-natural port))))
+   (begin ((expect-maybe-char #\space) port)
+          ((expect-char #\@) port)
+          ((expect-maybe-char #\space) port))
+   (let ((min-x (expect-natural port))))
+   (begin ((expect-char #\,) port))
+   (let ((min-y (expect-natural port))))
+   (begin ((expect-literal-string ": ") port))
+   (let ((len-x (expect-natural port))))
+   (begin ((expect-char #\x) port))
+   (let ((len-y (expect-natural port))))
+   (begin (expect-eol port))
+   [id min-x min-y len-x len-y]))
+
+(def (day3-input (file (day-input-file 3)))
+  (nest
+   (with-list-builder (c))
+   (call-with-input-file file) (λ (port))
+   (until (port-eof? port))
+   (c (parse-day3-line port))))
+
+(def day3-rectangles (day3-input))
+
+(def day3-min-x
+  (extremum<-list < (map second day3-rectangles))) ; 2
+(def day3-min-y
+  (extremum<-list < (map third day3-rectangles))) ; 0
+(def day3-max-x
+  (extremum<-list > (map (λ-match ([_ min-x _ len-x _] (+ min-x len-x))) day3-rectangles))) ; 1000
+(def day3-max-y
+  (extremum<-list > (map (λ-match ([_ min-y _ len-y _] (+ min-y len-y))) day3-rectangles))) ; 1000
+
+(def (day3-answer1)
+  (def table (make-vector (* 1000 1000) #\.))
+  (def (ixy x y) (+ (* x 1000) y))
+  (def (getxy x y) (vector-ref table (ixy x y)))
+  (def (setxy x y z) (vector-set! table (ixy x y) z))
+  (def (markxy x y)
+    (match (getxy x y)
+      (#\. (setxy x y #\#))
+      (#\# (setxy x y #\O))
+      (#\O (void))))
+  (def (set-rectangle min-x min-y len-x len-y)
+    (for ((x (in-range min-x len-x)))
+      (for ((y (in-range min-y len-y)))
+        (markxy x y))))
+  (for-each! day3-rectangles
+             (λ-match ([_ min-x min-y len-x len-y] (set-rectangle min-x min-y len-x len-y))))
+  (def overlap-count 0)
+  (for ((x (in-range 0 1000)))
+    (for ((y (in-range 0 1000)))
+      (when (eqv? (getxy x y) #\O)
+        (increment! overlap-count))))
+  overlap-count) ; 113716
+
+(def (interval-intersection int1 int2)
+  (nest
+   (match int1) ([start1 len1])
+   (match int2) ([start2 len2])
+   (let* ((end1 (+ start1 len1))
+          (end2 (+ start2 len2))
+          (start (max start1 start2))
+          (end (min end1 end2))
+          (len (- end start))))
+   (and (< 0 len) [start len])))
+
+(def (rectangle-intersection rec1 rec2)
+  (nest
+   (match rec1) ([start-x1 start-y1 len-x1 len-y1])
+   (match rec2) ([start-x2 start-y2 len-x2 len-y2])
+   (match (interval-intersection [start-x1 len-x1] [start-x2 len-x2]) (#f #f)) ([start-x len-x])
+   (match (interval-intersection [start-y1 len-y1] [start-y2 len-y2]) (#f #f)) ([start-y len-y])
+   [start-x start-y len-x len-y]))
+
+(def (day3-answer2)
+  (def rectangles (list->vector day3-rectangles))
+  (def n-rec (vector-length rectangles))
+  (let/cc k
+    (nest
+     (for (i (in-range 0 n-rec)))
+     (let/cc nope)
+     (begin
+       (nest
+        (for (j (in-range 0 n-rec)))
+        (unless (= i j))
+        (when (rectangle-intersection (cdr (vector-ref rectangles i))
+                                      (cdr (vector-ref rectangles j))))
+        (nope))
+       (k (car (vector-ref rectangles i)))))
+    #f)) ; 742
