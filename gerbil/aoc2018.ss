@@ -1,7 +1,7 @@
 ;; Solutions to https://AdventOfCode.com/2018
 
 (import
-  :std/iter :std/misc/list :std/misc/repr :std/srfi/1 :std/srfi/43 :std/sugar
+  :std/iter :std/misc/list :std/misc/repr :std/sort :std/srfi/1 :std/srfi/43 :std/sugar
   :clan/utils/assert :clan/utils/base :clan/utils/basic-parsers
   :clan/utils/generator :clan/utils/hash :clan/utils/number :clan/utils/vector)
 
@@ -255,3 +255,66 @@
         (nope))
        (k (car (vector-ref rectangles i)))))
     #f)) ; 742
+
+
+;;; DAY 4 https://adventofcode.com/2018/day/4
+
+(def (parse-day4-line line)
+  (def day (substring line 1 11))
+  (def hour (string->number (substring line 12 14)))
+  (def minute (string->number (substring line 15 17)))
+  (def action (string->symbol (string-downcase (substring line 19 24))))
+  (def guard (and (eq? action 'guard) (string->number (substring line 26 (if (eqv? (string-ref line 29) #\space) 29 30)))))
+  [day hour minute action guard])
+
+(def day4-journal
+  (!> (day-input-file 4)
+      read-file-lines
+      (cut sort <> string<)
+      (cut map parse-day4-line <>)))
+
+(def vector-ref-set! vector-set!)
+
+(def (day4-guard-model model guard)
+  (hash-ensure-ref model guard (λ () [0 (make-vector 60 0)])))
+
+(def (mark-time-slept model guard time-falls time-wakes)
+  (let ((v (second (day4-guard-model model guard))))
+    (for (i (in-range time-falls (- time-wakes time-falls)))
+      (increment! (vector-ref v i)))))
+
+(def day4-model
+  (nest
+   (let ((model (hash)) (current-guard #f) (time-falls #f))) (begin0 model)
+   (for-each! day4-journal) (λ-match) ([day hour minute action guard])
+   (match action
+     ('guard (set! current-guard guard) (set! time-falls #f)
+             (increment! (car (day4-guard-model model guard))))
+     ('falls (assert! current-guard) (assert-equal! hour 0) (set! time-falls minute))
+     ('wakes (assert! current-guard) (assert! time-falls) (assert-equal! hour 0)
+             (mark-time-slept model current-guard time-falls minute)
+             (set! time-falls #f)))))
+
+(def day4-sleepiest-guard
+  (!> day4-model
+      hash->list
+      (cut map (λ-match ([id _ v] (cons id (reduce + 0 (vector->list v))))) <>)
+      (cut extremum<-list (comparing-key test: > key: cdr) <>)
+      car))
+
+(def day4-sleepiest-minute
+  (let* ((v (second (hash-get day4-model day4-sleepiest-guard)))
+         (sleepiest-count (extremum<-list > (vector->list v))))
+    (vector-index (cut eqv? sleepiest-count <>) v)))
+
+(def day4-answer1 (* day4-sleepiest-guard day4-sleepiest-minute)) ; 72925
+
+(def day4-sleepiest-guard-minute
+  (!> day4-model
+      hash->list
+      (nest (λ (x)) (with-list-builder (c)) (for-each! x) (λ-match) ([id _ v])
+            (for (i (in-range 0 60))) (c [id (vector-ref v i) i]))
+      (cut extremum<-list (comparing-key test: > key: second) <>)))
+
+(def day4-answer2 (match day4-sleepiest-guard-minute ([guard _ minute] (* guard minute)))) ; 49137
+
