@@ -1,7 +1,9 @@
 ;; Solutions to https://AdventOfCode.com/2018
 
 (import
-  :std/iter :std/misc/list :std/misc/repr :std/sort :std/srfi/1 :std/srfi/43 :std/sugar
+  :gerbil/gambit/bits
+  :std/iter :std/misc/list :std/misc/repr :std/misc/string
+  :std/sort :std/srfi/1 :std/srfi/43 :std/sugar
   :clan/utils/assert :clan/utils/base :clan/utils/basic-parsers
   :clan/utils/generator :clan/utils/hash :clan/utils/number :clan/utils/vector)
 
@@ -318,3 +320,32 @@
 
 (def day4-answer2 (match day4-sleepiest-guard-minute ([guard _ minute] (* guard minute)))) ; 49137
 
+
+;;; DAY 5 https://adventofcode.com/2018/day/5
+
+(def day5-input (string-trim-eol (read-file-string (day-input-file 5))))
+
+(def (complement? x y)
+  (= 32 (bitwise-xor (char->integer x) (char->integer y))))
+
+(def (day5-enqueue x q)
+  (match q
+    ([] [x])
+    ([y . z] (if (complement? x y) z [x y . z]))))
+
+(def (day5-fold l)
+  (foldl day5-enqueue [] l))
+
+(def day5-reduced-input (day5-fold (string->list day5-input)))
+
+(def day5-answer1 (length day5-reduced-input)) ; 11042
+
+(def (unit-type-eq? x y)
+  (zero? (bitwise-and (bitwise-xor (char->integer x) (char->integer y)) (bitwise-not #x20))))
+
+(def (day5-remove-unit-type u)
+  (length (day5-fold (remove (cut unit-type-eq? u <>) day5-reduced-input))))
+
+(def all-letters (map integer->char (iota 26 65)))
+
+(def day5-answer2 (extremum<-list < (map day5-remove-unit-type all-letters))) ; 6872
