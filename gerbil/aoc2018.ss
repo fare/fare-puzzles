@@ -5,7 +5,8 @@
   :std/iter :std/misc/list :std/misc/repr :std/misc/string
   :std/sort :std/srfi/1 :std/srfi/43 :std/sugar
   :clan/utils/assert :clan/utils/base :clan/utils/basic-parsers
-  :clan/utils/generator :clan/utils/hash :clan/utils/number :clan/utils/vector)
+  :clan/utils/generator :clan/utils/hash :clan/utils/number
+  :clan/utils/stateful-avl-map :clan/utils/vector)
 
 ;;; DAY 1 https://adventofcode.com/2018/day/1
 
@@ -326,26 +327,219 @@
 (def day5-input (string-trim-eol (read-file-string (day-input-file 5))))
 
 (def (complement? x y)
-  (= 32 (bitwise-xor (char->integer x) (char->integer y))))
+  (= 32 (bitwise-xor (char->integer x) (char->integer y)))) ; assume ASCII letters
 
 (def (day5-enqueue x q)
   (match q
     ([] [x])
     ([y . z] (if (complement? x y) z [x y . z]))))
 
-(def (day5-fold l)
-  (foldl day5-enqueue [] l))
+(def (day5-fold l) (foldl day5-enqueue [] l))
 
 (def day5-reduced-input (day5-fold (string->list day5-input)))
 
 (def day5-answer1 (length day5-reduced-input)) ; 11042
 
+;; Given two letters, are they the same "unit type" (terminology from the problem)?
+;; NB: assume ASCII letters
 (def (unit-type-eq? x y)
   (zero? (bitwise-and (bitwise-xor (char->integer x) (char->integer y)) (bitwise-not #x20))))
 
 (def (day5-remove-unit-type u)
   (length (day5-fold (remove (cut unit-type-eq? u <>) day5-reduced-input))))
 
-(def all-letters (map integer->char (iota 26 65)))
+(def all-letters (map integer->char (iota 26 65))) ; assume ASCII
 
 (def day5-answer2 (extremum<-list < (map day5-remove-unit-type all-letters))) ; 6872
+
+
+;;; DAY 6 https://adventofcode.com/2018/day/6
+
+(def (day6-parse port)
+  (nest
+   (with-list-builder (c))
+   (until (port-eof? port))
+   (let ((x (expect-natural port)))
+     ((expect-char #\,) port)
+     ((expect-char #\space) port))
+   (let ((y (expect-natural port)))
+     (expect-eol port))
+   (c [x y])))
+
+(def day6-input (call-with-input-file (day-input-file 6) day6-parse))
+(def day6-len (length day6-input)) ; 50
+
+(def all-letters-both-cases
+  (!> all-letters list->string (λ (x) (string-append x (string-downcase x)))))
+
+(def day6-start-x (+ -1 (extremum<-list < (map first day6-input))))
+(def day6-end-x (+ 3 (extremum<-list > (map first day6-input))))
+(def day6-start-y (+ -1 (extremum<-list < (map second day6-input))))
+(def day6-end-y (+ 2 (extremum<-list > (map second day6-input))))
+(def day6-len-x (- day6-end-x day6-start-x))
+(def day6-len-y (- day6-end-y day6-start-y))
+(def (day6-ixy x y) (+ (- x day6-start-x) (* day6-len-x (- y day6-start-y))))
+
+(def (manhattan-distance a b)
+  (nest
+   (match a) ([ax ay])
+   (match b) ([bx by])
+   (+ (abs (- ax bx)) (abs (- ay by)))))
+
+(def day6-model
+  (nest
+   (let ((v (make-string (* day6-len-x day6-len-y) #\newline)))) (begin0 v)
+   (let ((p (list->vector day6-input))))
+   (for ((x (in-range day6-start-x (- day6-len-x 1)))))
+   (for ((y (in-range day6-start-y day6-len-y))))
+   (let ((mindist (+ day6-len-x day6-len-y))))
+   (for ((i (in-range 0 day6-len))))
+   (let ((dist (manhattan-distance [x y] (vector-ref p i))))
+     #;(prn [[x y] (vector-ref p i) dist mindist i (string-ref all-letters-both-cases i)]))
+   (cond
+    ((< dist mindist)
+     (set! mindist dist)
+     (string-set! v (day6-ixy x y) (string-ref all-letters-both-cases i)))
+    ((= dist mindist)
+     (string-set! v (day6-ixy x y) #\.)))))
+
+(def day6-infinite-letters
+  (let ((s (make-string day6-len #\.)))
+    (let ((mark (λ (x y)
+                  (let* ((c (string-ref day6-model (day6-ixy x y)))
+                         (i (string-index all-letters-both-cases c)))
+                    (when i
+                      (string-set! s i c))))))
+      (for ((x (in-range day6-start-x (- day6-len-x 2))))
+        (mark x day6-start-y)
+        (mark x (- day6-end-y 1)))
+      (for ((y (in-range day6-start-y (- day6-len-y 1))))
+        (mark day6-start-x y)
+        (mark (- day6-end-x 2) y)))
+    s))
+
+(def day6-areas
+  (nest
+   (let ((v (make-vector day6-len 0)))) (begin0 v)
+   (for ((x (in-range day6-start-x (- day6-len-x 1)))))
+   (for ((y (in-range day6-start-y day6-len-y))))
+   (let* ((c (string-ref day6-model (day6-ixy x y)))
+          (i (string-index all-letters-both-cases c))))
+   (when (and i (eqv? #\. (string-ref day6-infinite-letters i))))
+   (increment! (vector-ref v i))))
+
+(def day6-answer1
+  (extremum<-list > (vector->list day6-areas))) ; 5626
+
+(def day6-answer2
+  (let ((size 0))
+   (for ((x (in-range day6-start-x (- day6-len-x 1))))
+     (for ((y (in-range day6-start-y day6-len-y)))
+       (when (< (reduce + 0 (map (cut manhattan-distance [x y] <>) day6-input)) 10000)
+         (increment! size))))
+   size)) ; 46554
+
+
+;;; DAY 7 https://adventofcode.com/2018/day/7
+
+(def (day7-parse port)
+  (nest
+   (with-list-builder (c))
+   (until (port-eof? port))
+   (begin ((expect-literal-string "Step ") port))
+   (let ((pre (read-char port)))
+     ((expect-literal-string " must be finished before step ") port))
+   (let ((post (read-char port)))
+     ((expect-literal-string " can begin.\n") port))
+   (c [pre post])))
+
+(def day7-input (call-with-input-file (day-input-file 7) day7-parse))
+(def day7-len (length day7-input))
+
+(assert-equal!
+ all-letters
+ (!> (append (map first day7-input) (map second day7-input))
+     (cut sort <> char<?)
+     (cut delete-duplicates <> eqv?)))
+
+(def (task-model priority-comparer tasks constraints)
+  (def initial (avl-map<-alist priority-comparer (map (cut cons <> #t) tasks)))
+  (def depends-on (hash))
+  (def blocks (hash))
+  (def (get-depends-on post) (hash-ensure-ref depends-on post make-hash-table))
+  (def (get-blocks pre) (hash-ensure-ref blocks pre make-hash-table))
+  (def (add-constraint pre post)
+    (hash-put! (get-depends-on post) pre #t)
+    (hash-put! (get-blocks pre) post #t)
+    (when (avl-map-key? priority-comparer initial post)
+      (avl-map-remove! priority-comparer initial post)))
+  (for-each! constraints (cut apply add-constraint <>))
+  (values initial get-depends-on get-blocks))
+
+(def (topological-sort priority-comparer tasks constraints)
+  (defvalues (initial get-depends-on get-blocks) (task-model priority-comparer tasks constraints))
+  (nest
+   (with-list-builder (c))
+   (until (avl-map-empty? initial))
+   (let ((pre (first-value (avl-map-leftmost initial)))))
+   (begin (c pre)
+          (avl-map-remove! priority-comparer initial pre))
+   ((cut hash-for-each <> (get-blocks pre))) (λ (post _))
+   (let ((deps (get-depends-on post))))
+   (begin (hash-remove! deps pre))
+   (when (hash-empty? deps))
+   (avl-map-put! priority-comparer initial post #t)))
+
+(def (day7-answer1)
+  (list->string (topological-sort char-comparer all-letters day7-input))) ; "BDHNEGOLQASVWYPXUMZJIKRTFC"
+
+(def (task-duration task)
+  (+ 60 -64 (char->integer task)))
+
+(def (string<-charset cs)
+  (!> (cond
+       ((list? cs) cs)
+       ((hash-table? cs) (hash-keys cs))
+       ((avl-map? cs) (map first (alist<-avl-map cs))))
+      (cut sort <> char<?)
+      list->string))
+
+(def (sorted-char-hash-keys h) (list->string (sort (hash-keys h) char<?)))
+
+(def (schedule-tasks priority-comparer task-duration n-workers tasks constraints)
+  (defvalues (ready get-depends-on get-blocks) (task-model priority-comparer tasks constraints))
+  (def pending (make-empty-avl-map))
+  (def clock 0)
+  (def (done?) (and (avl-map-empty? ready) (avl-map-empty? pending)))
+  (def (can-do?) (and (not (avl-map-empty? ready)) (< 0 n-workers)))
+  (until (done?)
+    (prn [clock 'ready (string<-charset ready) 'pending (alist<-avl-map pending) 'workers n-workers])
+    (cond
+     ((can-do?)
+      (let* ((task (first-value (avl-map-leftmost ready)))
+             (completion-time (+ clock (task-duration task))))
+        (avl-map-remove! priority-comparer ready task)
+        (decrement! n-workers)
+        (prn [clock 'starting-task task 'done completion-time 'pending (alist<-avl-map pending)
+                             'lookup (values->list (avl-map-lookup number-comparer pending completion-time))])
+        (let ((complete-then (avl-map-ref number-comparer pending completion-time [])))
+          (avl-map-put! number-comparer pending completion-time (cons task complete-then)))))
+     (else
+      (let-values (((completion-time complete) (avl-map-leftmost pending)))
+        (set! clock completion-time)
+        (avl-map-remove! number-comparer pending clock)
+        (for-each!
+         complete
+         (λ (task)
+           (increment! n-workers)
+           (prn [clock 'completed-task task (string<-charset (get-blocks task))])
+           (hash-for-each (λ (post _)
+                            (let ((deps (get-depends-on post)))
+                              (hash-remove! deps task)
+                              (when (hash-empty? deps)
+                                (avl-map-put! priority-comparer ready post #t))))
+                          (get-blocks task))))))))
+  clock)
+
+(def (day7-answer2)
+  (schedule-tasks char-comparer task-duration 5 all-letters day7-input)) ;; 1107
