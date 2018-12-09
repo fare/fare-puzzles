@@ -543,3 +543,42 @@
 
 (def (day7-answer2)
   (schedule-tasks char-comparer task-duration 5 all-letters day7-input)) ;; 1107
+
+
+;;; DAY 8 https://adventofcode.com/2018/day/8
+
+(def (day8-parse port)
+  (nest
+   (with-list-builder (c))
+   (until (port-eof? port))
+   (begin (c (expect-natural port)))
+   (expect-and-skip-any-whitespace port)))
+
+(def day8-input (call-with-input-file (day-input-file 8) day8-parse))
+(def day8-len (length day8-input))
+
+(def (day8-answer1)
+  (def g (generating<-list day8-input))
+  (def count 0)
+  (def (walk)
+    (def n-children (g))
+    (def n-metadata (g))
+    (for (_ (in-range 0 n-children)) (walk))
+    (for (_ (in-range 0 n-metadata)) (increment! count (g))))
+  (walk)
+  count) ; 40977
+
+(def (day8-answer2)
+  (def g (generating<-list day8-input))
+  (def count 0)
+  (def (walk)
+    (def n-children (g))
+    (def n-metadata (g))
+    (if (zero? n-children)
+      (reduce + 0 (generating-take g n-metadata))
+      (let* ((children (list->vector (generating-take walk n-children)))
+             (metadata (generating-take g n-metadata)))
+        (reduce + 0 (map (λ (i) (let ((j (- i 1))) (if (< -1 j (vector-length children)) (vector-ref children j) 0))) metadata)))))
+  (walk)) ; 27490
+
+
