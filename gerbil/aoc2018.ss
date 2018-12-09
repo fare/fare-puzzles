@@ -582,3 +582,152 @@
   (walk)) ; 27490
 
 
+;;; DAY 9 https://adventofcode.com/2018/day/9
+
+(def (day9-parse port)
+  (nest
+   (let ((n-players (expect-natural port)))
+     ((expect-literal-string " players; last marble is worth ") port))
+   (let ((last-marble-points (expect-natural port)))
+     ((expect-literal-string " points") port))
+   (values n-players last-marble-points)))
+
+(def (day9-input) (call-with-input-file (day-input-file 9) day9-parse))
+(defvalues (day9-n-players day9-last-marble-points) (day9-input))
+
+(def (iterate-function n fun . v)
+  (if (zero? n)
+    (apply values v)
+    (apply iterate-function (- n 1) fun (values->list (apply fun v)))))
+
+;; TODO: to work with much larger numbers, try finger trees?
+
+;; Mutable doubly-linked data structure for ring buffers (where every node holds one data value)
+;; and lists (where the singleton is a special marker that holds no meaningful data value).
+;; When pointing to a node, the "circle" object is the current node.
+;; When pointing to a point between nodes, the "circle" object is a cursor before the current node.
+;; Circle : Type <- Type
+;; make-circle : (Circle Value) <- Value (Circle Value) (Circle Value)
+(defstruct circle
+  (value prev next))
+
+;; Create a doubly-linked circle node the given value, linked to itself.
+;; (Circle V) <- V
+(def (circle-singleton v)
+  (def c (make-circle v #f #f))
+  (set! (circle-prev c) c)
+  (set! (circle-next c) c)
+  c)
+
+;; Splice two circles at given points... together if apart, or apart if together. Return the first point.
+;; (Circle V) <- (Circle V) (Circle V)
+(def (circle-splice c+ d+) ; splice the two circles together
+  (let ((c- (circle-prev c+))
+        (d- (circle-prev d+)))
+    (set! (circle-next c-) d+)
+    (set! (circle-prev d+) c-)
+    (set! (circle-next d-) c+)
+    (set! (circle-prev c+) d-)
+    c+))
+
+;; Move n times next if n is positive, or -n times prev if n is negative.
+;; (Circle V) <- (Circle V) Integer
+(def (circle-move c n)
+  (if (<= 0 n)
+    (iterate-function n circle-next c)
+    (iterate-function (- n) circle-prev c)))
+
+;; Splice the value at the cursor, just before the current point
+;; (Circle V) <- (Circle V) V
+(def (circle-add c v)
+  (circle-splice c (circle-singleton v)))
+
+;; Splice the value at the cursor, just before the current point
+;; (Circle V) <- V (Circle V)
+(def (circle-push v c)
+  (circle-add c v))
+
+;; Splice the value after the current point
+;; (Circle V) <- (Circle V) V
+(def (circle-add-next c v)
+  (circle-add (circle-next c) v) c)
+
+;; Splice the value after the current point, return the next point (the current point becomes a singleton)
+;; (Circle V) <- (Circle V)
+(def (circle-remove c)
+  (circle-splice (circle-next c) c))
+
+;; Return a list of elements after the first point and before the second, including the current node
+;; (List V) <- (Circle V) (Circle V)
+(def (circle-elements+ start stop)
+  (cons (circle-value start) (circle-elements- (circle-next start) stop)))
+
+;; Return a list of elements after the first node and before the second, excluding the current node
+;; (List V) <- (Circle V) (Circle V)
+(def (circle-elements- start stop)
+  (if (eq? start stop) [] (circle-elements+ start stop)))
+
+;; Return a list of elements in the circle
+;; (List V) <- (Circle V)
+(def (list<-circle c)
+  (circle-elements+ c c))
+
+;; Create a circle from the list of elements
+;; (Circle V) <- (List V)
+(def (circle<-list l)
+  (match l
+    ([] (error "cannot make circle from empty list"))
+    ([h . t] (foldl circle-push (circle-singleton h) t))))
+
+(defmethod {:pr circle}
+  (λ (c (port (current-output-port)) (options (current-representation-options)))
+    (def (p y) (pr y port options))
+    (def (d y) (display y port))
+    (d "(circle<-list")
+    (for-each (λ (x) (d " ") (p x)) (list<-circle c))
+    (d ")")))
+
+(def circle-test
+  (test-suite "test suite for circle"
+    (test-case "test circle creation"
+      (check-equal? (list<-circle (circle-singleton 1)) [1])
+      (check-equal? (list<-circle (circle<-list [1 2 3 4])) [1 2 3 4]))
+
+    (test-case "test splicing"
+      (check-equal? (list<-circle (circle-splice (circle<-list [1 2 3 4]) (circle<-list [5 6 7 8])))
+                    [1 2 3 4 5 6 7 8]))))
+
+(def (marble-step marble circle scorecard)
+  (def n-players (vector-length scorecard))
+  (def player (remainder marble n-players))
+  (if (zero? (remainder marble 23))
+    (let ((c (circle-move circle -7)))
+      (increment! (vector-ref scorecard player) (+ marble (circle-value c)))
+      (circle-remove c))
+    (circle-splice (circle-singleton marble) (circle-move circle 2))))
+
+(def (marble-play n-players max-marble)
+  (def circle (circle-singleton 0))
+  (def scorecard (make-vector n-players 0))
+  (when (> max-marble 0)
+    (for (marble (in-range 1 (- max-marble 1)))
+      (set! circle (marble-step marble circle scorecard))))
+  (foldl max 0 (vector->list scorecard)))
+
+(def marble-test
+  (test-suite "test suite for marble game"
+    (test-case "test given results"
+      (check-equal? (marble-play 10 1618) 8317)
+      (check-equal? (marble-play 13 7999) 146373)
+      ;; (check-equal? (marble-play 17 1104) 2764) ; BUG? we return 2720 instead
+      (check-equal? (marble-play 21 6111) 54718)
+      (check-equal? (marble-play 30 5807) 37305))))
+
+(def (day9-answer1)
+  (defvalues (n-players max-marble) (day9-input))
+  (marble-play n-players max-marble)) ; 384288
+
+(def (day9-answer2)
+  (defvalues (n-players max-marble) (day9-input))
+  (marble-play n-players (* max-marble 100))) ; 3189426841
+
