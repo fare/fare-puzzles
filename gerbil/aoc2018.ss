@@ -8,8 +8,8 @@
   :clan/utils/generator :clan/utils/hash :clan/utils/number
   :clan/utils/stateful-avl-map :clan/utils/vector)
 
-;;; DAY 1 https://adventofcode.com/2018/day/1
-
+;;; General purpose utilities
+;; TODO: move those definitions to clan at some point, then maybe gerbil itself.
 (defsyntax (this-source-directory stx)
   (syntax-case stx ()
     ((_)
@@ -34,20 +34,15 @@
       (parse-error! 'expect-signed-integer "Neither a sign nor a digit in requested base"
                     char base port)))))
 
-(def (for-each-port-signed-integer! port fun)
-  (until (port-eof? port)
-    (fun (expect-signed-integer port))
-    (expect-and-skip-any-whitespace port)))
-
-(def (day1-input (file (day-input-file 1)))
+(def (parse-file-lines parse-line file)
   (nest
-   (generating<-for-each) (λ (yield))
+   (with-list-builder (c))
    (call-with-input-file file) (λ (port))
-   (for-each-port-signed-integer! port yield)))
+   (until (port-eof? port))
+   (begin (c (parse-line port)))
+   (expect-eol port)))
 
-(def day1-answer1 (reduce + 0 (list<-generating (day1-input)))) ;; 445
-
-
+;;; Generating tweaks, used by day 1
 (def (generating-decons on-cons on-eof g)
   (let/cc k (on-cons (g (λ () (k (on-eof)))))))
 
@@ -87,520 +82,8 @@
 (def (generating-indefinitely gg)
   (generating<-for-each (λ (yield) (while #t (generating-for-each! (gg) yield)))))
 
-(def day1-answer2
-  (generating-find-first-duplicate
-   (generating-sums
-    (generating-indefinitely day1-input)))) ;; 219
 
-
-;;; DAY 2 https://adventofcode.com/2018/day/2
-
-(def (day2-input (file (day-input-file 2))) (read-file-lines file))
-
-(def (hash-increment! table key (increment 1))
-  (let ((previous (hash-ref table key 0)))
-    (hash-put! table key (+ previous increment))))
-
-(def (letter-counts id)
-  (let ((counts (hash)))
-    (string-for-each (cut hash-increment! counts <>) id)
-    counts))
-
-(def (invert-letter-counts id)
-  (invert-hash (letter-counts id)))
-
-(def (day2-checksum input)
-  (let* ((invert-counts (map invert-letter-counts input))
-         (containing-exactly-2-of-some-letter (length (filter (cut hash-key? <> 2) invert-counts)))
-         (containing-exactly-3-of-some-letter (length (filter (cut hash-key? <> 3) invert-counts))))
-    (* containing-exactly-2-of-some-letter containing-exactly-3-of-some-letter)))
-
-(def day2-answer1 (day2-checksum (day2-input))) ;; 5456
-
-(def (least-string-difference-index x y)
-  (let ((lx (string-length x))
-        (ly (string-length y)))
-    (letrec ((r (λ (i)
-                  (if (<= lx i) (if (<= ly i) #f i)
-                      (if (<= ly i) i
-                          (if (eqv? (string-ref x i) (string-ref y i)) (r (+ i 1)) i))))))
-      (r 0))))
-
-(def (string-pair-single-different-index x y)
-  (nest
-   (let ((lx (string-length x))
-         (ly (string-length y))))
-   (and (= lx ly))
-   (let ((i (least-string-difference-index x y))))
-   (and i)
-   (let ((j (+ i 1))))
-   (and (string= x y j lx j lx))
-   i))
-
-(def (string-pair-without-single-difference x y)
-  (let ((i (string-pair-single-different-index x y)))
-    (and i (string-append (substring x 0 i) (substring x (+ i 1) (string-length x))))))
-
-(def (list-for-each-pair! l1 l2 f)
-  (for-each! l1 (λ (x1) (for-each! l2 (λ (x2) (f x1 x2))))))
-
-(def (list-for-each-head-tail! l f)
-  (letrec ((r (λ-match
-               ([] (void))
-               ([head . tail]
-                (f head tail)
-                (r tail)))))
-    (r l)))
-
-(def (list-for-each-couple! l f)
-  (list-for-each-head-tail! l (λ (h t) (for-each! t (cut f h <>)))))
-
-(def day2-answer2
-  (nest
-   (let/cc k)
-   (list-for-each-couple! (day2-input)) (λ (x y))
-   (when-let (r (string-pair-without-single-difference x y)))
-   (k r))) ;; "megsdlpulxvinkatfoyzxcbvq"
-
-
-;;; DAY 3 https://adventofcode.com/2018/day/3
-
-(def (parse-day3-line port)
-  (nest
-   (begin ((expect-maybe-char #\#) port))
-   (let ((id (expect-natural port))))
-   (begin ((expect-maybe-char #\space) port)
-          ((expect-char #\@) port)
-          ((expect-maybe-char #\space) port))
-   (let ((min-x (expect-natural port))))
-   (begin ((expect-char #\,) port))
-   (let ((min-y (expect-natural port))))
-   (begin ((expect-literal-string ": ") port))
-   (let ((len-x (expect-natural port))))
-   (begin ((expect-char #\x) port))
-   (let ((len-y (expect-natural port))))
-   (begin (expect-eol port))
-   [id min-x min-y len-x len-y]))
-
-(def (day3-input (file (day-input-file 3)))
-  (nest
-   (with-list-builder (c))
-   (call-with-input-file file) (λ (port))
-   (until (port-eof? port))
-   (c (parse-day3-line port))))
-
-(def day3-rectangles (day3-input))
-
-(def day3-min-x
-  (extremum<-list < (map second day3-rectangles))) ; 2
-(def day3-min-y
-  (extremum<-list < (map third day3-rectangles))) ; 0
-(def day3-max-x
-  (extremum<-list > (map (λ-match ([_ min-x _ len-x _] (+ min-x len-x))) day3-rectangles))) ; 1000
-(def day3-max-y
-  (extremum<-list > (map (λ-match ([_ min-y _ len-y _] (+ min-y len-y))) day3-rectangles))) ; 1000
-
-(def (day3-answer1)
-  (def table (make-vector (* 1000 1000) #\.))
-  (def (ixy x y) (+ (* x 1000) y))
-  (def (getxy x y) (vector-ref table (ixy x y)))
-  (def (setxy x y z) (vector-set! table (ixy x y) z))
-  (def (markxy x y)
-    (match (getxy x y)
-      (#\. (setxy x y #\#))
-      (#\# (setxy x y #\O))
-      (#\O (void))))
-  (def (set-rectangle min-x min-y len-x len-y)
-    (for ((x (in-range min-x len-x)))
-      (for ((y (in-range min-y len-y)))
-        (markxy x y))))
-  (for-each! day3-rectangles
-             (λ-match ([_ min-x min-y len-x len-y] (set-rectangle min-x min-y len-x len-y))))
-  (def overlap-count 0)
-  (for ((x (in-range 0 1000)))
-    (for ((y (in-range 0 1000)))
-      (when (eqv? (getxy x y) #\O)
-        (increment! overlap-count))))
-  overlap-count) ; 113716
-
-(def (interval-intersection int1 int2)
-  (nest
-   (match int1) ([start1 len1])
-   (match int2) ([start2 len2])
-   (let* ((end1 (+ start1 len1))
-          (end2 (+ start2 len2))
-          (start (max start1 start2))
-          (end (min end1 end2))
-          (len (- end start))))
-   (and (< 0 len) [start len])))
-
-(def (rectangle-intersection rec1 rec2)
-  (nest
-   (match rec1) ([start-x1 start-y1 len-x1 len-y1])
-   (match rec2) ([start-x2 start-y2 len-x2 len-y2])
-   (match (interval-intersection [start-x1 len-x1] [start-x2 len-x2]) (#f #f)) ([start-x len-x])
-   (match (interval-intersection [start-y1 len-y1] [start-y2 len-y2]) (#f #f)) ([start-y len-y])
-   [start-x start-y len-x len-y]))
-
-(def (day3-answer2)
-  (def rectangles (list->vector day3-rectangles))
-  (def n-rec (vector-length rectangles))
-  (let/cc k
-    (nest
-     (for (i (in-range 0 n-rec)))
-     (let/cc nope)
-     (begin
-       (nest
-        (for (j (in-range 0 n-rec)))
-        (unless (= i j))
-        (when (rectangle-intersection (cdr (vector-ref rectangles i))
-                                      (cdr (vector-ref rectangles j))))
-        (nope))
-       (k (car (vector-ref rectangles i)))))
-    #f)) ; 742
-
-
-;;; DAY 4 https://adventofcode.com/2018/day/4
-
-(def (parse-day4-line line)
-  (def day (substring line 1 11))
-  (def hour (string->number (substring line 12 14)))
-  (def minute (string->number (substring line 15 17)))
-  (def action (string->symbol (string-downcase (substring line 19 24))))
-  (def guard (and (eq? action 'guard) (string->number (substring line 26 (if (eqv? (string-ref line 29) #\space) 29 30)))))
-  [day hour minute action guard])
-
-(def day4-journal
-  (!> (day-input-file 4)
-      read-file-lines
-      (cut sort <> string<)
-      (cut map parse-day4-line <>)))
-
-(def vector-ref-set! vector-set!)
-
-(def (day4-guard-model model guard)
-  (hash-ensure-ref model guard (λ () [0 (make-vector 60 0)])))
-
-(def (mark-time-slept model guard time-falls time-wakes)
-  (let ((v (second (day4-guard-model model guard))))
-    (for (i (in-range time-falls (- time-wakes time-falls)))
-      (increment! (vector-ref v i)))))
-
-(def day4-model
-  (nest
-   (let ((model (hash)) (current-guard #f) (time-falls #f))) (begin0 model)
-   (for-each! day4-journal) (λ-match) ([day hour minute action guard])
-   (match action
-     ('guard (set! current-guard guard) (set! time-falls #f)
-             (increment! (car (day4-guard-model model guard))))
-     ('falls (assert! current-guard) (assert-equal! hour 0) (set! time-falls minute))
-     ('wakes (assert! current-guard) (assert! time-falls) (assert-equal! hour 0)
-             (mark-time-slept model current-guard time-falls minute)
-             (set! time-falls #f)))))
-
-(def day4-sleepiest-guard
-  (!> day4-model
-      hash->list
-      (cut map (λ-match ([id _ v] (cons id (reduce + 0 (vector->list v))))) <>)
-      (cut extremum<-list (comparing-key test: > key: cdr) <>)
-      car))
-
-(def day4-sleepiest-minute
-  (let* ((v (second (hash-get day4-model day4-sleepiest-guard)))
-         (sleepiest-count (extremum<-list > (vector->list v))))
-    (vector-index (cut eqv? sleepiest-count <>) v)))
-
-(def day4-answer1 (* day4-sleepiest-guard day4-sleepiest-minute)) ; 72925
-
-(def day4-sleepiest-guard-minute
-  (!> day4-model
-      hash->list
-      (nest (λ (x)) (with-list-builder (c)) (for-each! x) (λ-match) ([id _ v])
-            (for (i (in-range 0 60))) (c [id (vector-ref v i) i]))
-      (cut extremum<-list (comparing-key test: > key: second) <>)))
-
-(def day4-answer2 (match day4-sleepiest-guard-minute ([guard _ minute] (* guard minute)))) ; 49137
-
-
-;;; DAY 5 https://adventofcode.com/2018/day/5
-
-(def day5-input (string-trim-eol (read-file-string (day-input-file 5))))
-
-(def (complement? x y)
-  (= 32 (bitwise-xor (char->integer x) (char->integer y)))) ; assume ASCII letters
-
-(def (day5-enqueue x q)
-  (match q
-    ([] [x])
-    ([y . z] (if (complement? x y) z [x y . z]))))
-
-(def (day5-fold l) (foldl day5-enqueue [] l))
-
-(def day5-reduced-input (day5-fold (string->list day5-input)))
-
-(def day5-answer1 (length day5-reduced-input)) ; 11042
-
-;; Given two letters, are they the same "unit type" (terminology from the problem)?
-;; NB: assume ASCII letters
-(def (unit-type-eq? x y)
-  (zero? (bitwise-and (bitwise-xor (char->integer x) (char->integer y)) (bitwise-not #x20))))
-
-(def (day5-remove-unit-type u)
-  (length (day5-fold (remove (cut unit-type-eq? u <>) day5-reduced-input))))
-
-(def all-letters (map integer->char (iota 26 65))) ; assume ASCII
-
-(def day5-answer2 (extremum<-list < (map day5-remove-unit-type all-letters))) ; 6872
-
-
-;;; DAY 6 https://adventofcode.com/2018/day/6
-
-(def (day6-parse port)
-  (nest
-   (with-list-builder (c))
-   (until (port-eof? port))
-   (let ((x (expect-natural port)))
-     ((expect-char #\,) port)
-     ((expect-char #\space) port))
-   (let ((y (expect-natural port)))
-     (expect-eol port))
-   (c [x y])))
-
-(def day6-input (call-with-input-file (day-input-file 6) day6-parse))
-(def day6-len (length day6-input)) ; 50
-
-(def all-letters-both-cases
-  (!> all-letters list->string (λ (x) (string-append x (string-downcase x)))))
-
-(def day6-start-x (+ -1 (extremum<-list < (map first day6-input))))
-(def day6-end-x (+ 3 (extremum<-list > (map first day6-input))))
-(def day6-start-y (+ -1 (extremum<-list < (map second day6-input))))
-(def day6-end-y (+ 2 (extremum<-list > (map second day6-input))))
-(def day6-len-x (- day6-end-x day6-start-x))
-(def day6-len-y (- day6-end-y day6-start-y))
-(def (day6-ixy x y) (+ (- x day6-start-x) (* day6-len-x (- y day6-start-y))))
-
-(def (manhattan-distance a b)
-  (nest
-   (match a) ([ax ay])
-   (match b) ([bx by])
-   (+ (abs (- ax bx)) (abs (- ay by)))))
-
-(def day6-model
-  (nest
-   (let ((v (make-string (* day6-len-x day6-len-y) #\newline)))) (begin0 v)
-   (let ((p (list->vector day6-input))))
-   (for ((x (in-range day6-start-x (- day6-len-x 1)))))
-   (for ((y (in-range day6-start-y day6-len-y))))
-   (let ((mindist (+ day6-len-x day6-len-y))))
-   (for ((i (in-range 0 day6-len))))
-   (let ((dist (manhattan-distance [x y] (vector-ref p i))))
-     #;(prn [[x y] (vector-ref p i) dist mindist i (string-ref all-letters-both-cases i)]))
-   (cond
-    ((< dist mindist)
-     (set! mindist dist)
-     (string-set! v (day6-ixy x y) (string-ref all-letters-both-cases i)))
-    ((= dist mindist)
-     (string-set! v (day6-ixy x y) #\.)))))
-
-(def day6-infinite-letters
-  (let ((s (make-string day6-len #\.)))
-    (let ((mark (λ (x y)
-                  (let* ((c (string-ref day6-model (day6-ixy x y)))
-                         (i (string-index all-letters-both-cases c)))
-                    (when i
-                      (string-set! s i c))))))
-      (for ((x (in-range day6-start-x (- day6-len-x 2))))
-        (mark x day6-start-y)
-        (mark x (- day6-end-y 1)))
-      (for ((y (in-range day6-start-y (- day6-len-y 1))))
-        (mark day6-start-x y)
-        (mark (- day6-end-x 2) y)))
-    s))
-
-(def day6-areas
-  (nest
-   (let ((v (make-vector day6-len 0)))) (begin0 v)
-   (for ((x (in-range day6-start-x (- day6-len-x 1)))))
-   (for ((y (in-range day6-start-y day6-len-y))))
-   (let* ((c (string-ref day6-model (day6-ixy x y)))
-          (i (string-index all-letters-both-cases c))))
-   (when (and i (eqv? #\. (string-ref day6-infinite-letters i))))
-   (increment! (vector-ref v i))))
-
-(def day6-answer1
-  (extremum<-list > (vector->list day6-areas))) ; 5626
-
-(def day6-answer2
-  (let ((size 0))
-   (for ((x (in-range day6-start-x (- day6-len-x 1))))
-     (for ((y (in-range day6-start-y day6-len-y)))
-       (when (< (reduce + 0 (map (cut manhattan-distance [x y] <>) day6-input)) 10000)
-         (increment! size))))
-   size)) ; 46554
-
-
-;;; DAY 7 https://adventofcode.com/2018/day/7
-
-(def (day7-parse port)
-  (nest
-   (with-list-builder (c))
-   (until (port-eof? port))
-   (begin ((expect-literal-string "Step ") port))
-   (let ((pre (read-char port)))
-     ((expect-literal-string " must be finished before step ") port))
-   (let ((post (read-char port)))
-     ((expect-literal-string " can begin.\n") port))
-   (c [pre post])))
-
-(def day7-input (call-with-input-file (day-input-file 7) day7-parse))
-(def day7-len (length day7-input))
-
-(assert-equal!
- all-letters
- (!> (append (map first day7-input) (map second day7-input))
-     (cut sort <> char<?)
-     (cut delete-duplicates <> eqv?)))
-
-(def (task-model priority-comparer tasks constraints)
-  (def initial (avl-map<-alist priority-comparer (map (cut cons <> #t) tasks)))
-  (def depends-on (hash))
-  (def blocks (hash))
-  (def (get-depends-on post) (hash-ensure-ref depends-on post make-hash-table))
-  (def (get-blocks pre) (hash-ensure-ref blocks pre make-hash-table))
-  (def (add-constraint pre post)
-    (hash-put! (get-depends-on post) pre #t)
-    (hash-put! (get-blocks pre) post #t)
-    (when (avl-map-key? priority-comparer initial post)
-      (avl-map-remove! priority-comparer initial post)))
-  (for-each! constraints (cut apply add-constraint <>))
-  (values initial get-depends-on get-blocks))
-
-(def (topological-sort priority-comparer tasks constraints)
-  (defvalues (initial get-depends-on get-blocks) (task-model priority-comparer tasks constraints))
-  (nest
-   (with-list-builder (c))
-   (until (avl-map-empty? initial))
-   (let ((pre (first-value (avl-map-leftmost initial)))))
-   (begin (c pre)
-          (avl-map-remove! priority-comparer initial pre))
-   ((cut hash-for-each <> (get-blocks pre))) (λ (post _))
-   (let ((deps (get-depends-on post))))
-   (begin (hash-remove! deps pre))
-   (when (hash-empty? deps))
-   (avl-map-put! priority-comparer initial post #t)))
-
-(def (day7-answer1)
-  (list->string (topological-sort char-comparer all-letters day7-input))) ; "BDHNEGOLQASVWYPXUMZJIKRTFC"
-
-(def (task-duration task)
-  (+ 60 -64 (char->integer task)))
-
-(def (string<-charset cs)
-  (!> (cond
-       ((list? cs) cs)
-       ((hash-table? cs) (hash-keys cs))
-       ((avl-map? cs) (map first (alist<-avl-map cs))))
-      (cut sort <> char<?)
-      list->string))
-
-(def (sorted-char-hash-keys h) (list->string (sort (hash-keys h) char<?)))
-
-(def (schedule-tasks priority-comparer task-duration n-workers tasks constraints)
-  (defvalues (ready get-depends-on get-blocks) (task-model priority-comparer tasks constraints))
-  (def pending (make-empty-avl-map))
-  (def clock 0)
-  (def (done?) (and (avl-map-empty? ready) (avl-map-empty? pending)))
-  (def (can-do?) (and (not (avl-map-empty? ready)) (< 0 n-workers)))
-  (until (done?)
-    (prn [clock 'ready (string<-charset ready) 'pending (alist<-avl-map pending) 'workers n-workers])
-    (cond
-     ((can-do?)
-      (let* ((task (first-value (avl-map-leftmost ready)))
-             (completion-time (+ clock (task-duration task))))
-        (avl-map-remove! priority-comparer ready task)
-        (decrement! n-workers)
-        (prn [clock 'starting-task task 'done completion-time 'pending (alist<-avl-map pending)
-                             'lookup (values->list (avl-map-lookup number-comparer pending completion-time))])
-        (let ((complete-then (avl-map-ref number-comparer pending completion-time [])))
-          (avl-map-put! number-comparer pending completion-time (cons task complete-then)))))
-     (else
-      (let-values (((completion-time complete) (avl-map-leftmost pending)))
-        (set! clock completion-time)
-        (avl-map-remove! number-comparer pending clock)
-        (for-each!
-         complete
-         (λ (task)
-           (increment! n-workers)
-           (prn [clock 'completed-task task (string<-charset (get-blocks task))])
-           (hash-for-each (λ (post _)
-                            (let ((deps (get-depends-on post)))
-                              (hash-remove! deps task)
-                              (when (hash-empty? deps)
-                                (avl-map-put! priority-comparer ready post #t))))
-                          (get-blocks task))))))))
-  clock)
-
-(def (day7-answer2)
-  (schedule-tasks char-comparer task-duration 5 all-letters day7-input)) ;; 1107
-
-
-;;; DAY 8 https://adventofcode.com/2018/day/8
-
-(def (day8-parse port)
-  (nest
-   (with-list-builder (c))
-   (until (port-eof? port))
-   (begin (c (expect-natural port)))
-   (expect-and-skip-any-whitespace port)))
-
-(def day8-input (call-with-input-file (day-input-file 8) day8-parse))
-(def day8-len (length day8-input))
-
-(def (day8-answer1)
-  (def g (generating<-list day8-input))
-  (def count 0)
-  (def (walk)
-    (def n-children (g))
-    (def n-metadata (g))
-    (for (_ (in-range 0 n-children)) (walk))
-    (for (_ (in-range 0 n-metadata)) (increment! count (g))))
-  (walk)
-  count) ; 40977
-
-(def (day8-answer2)
-  (def g (generating<-list day8-input))
-  (def count 0)
-  (def (walk)
-    (def n-children (g))
-    (def n-metadata (g))
-    (if (zero? n-children)
-      (reduce + 0 (generating-take g n-metadata))
-      (let* ((children (list->vector (generating-take walk n-children)))
-             (metadata (generating-take g n-metadata)))
-        (reduce + 0 (map (λ (i) (let ((j (- i 1))) (if (< -1 j (vector-length children)) (vector-ref children j) 0))) metadata)))))
-  (walk)) ; 27490
-
-
-;;; DAY 9 https://adventofcode.com/2018/day/9
-
-(def (day9-parse port)
-  (nest
-   (let ((n-players (expect-natural port)))
-     ((expect-literal-string " players; last marble is worth ") port))
-   (let ((last-marble-points (expect-natural port)))
-     ((expect-literal-string " points") port))
-   (values n-players last-marble-points)))
-
-(def (day9-input) (call-with-input-file (day-input-file 9) day9-parse))
-(defvalues (day9-n-players day9-last-marble-points) (day9-input))
-
-(def (iterate-function n fun . v)
-  (if (zero? n)
-    (apply values v)
-    (apply iterate-function (- n 1) fun (values->list (apply fun v)))))
-
-;; TODO: to work with much larger numbers, try finger trees?
+;;; Doubly-linked data structures, used by Day 9
 
 ;; Mutable doubly-linked data structure for ring buffers (where every node holds one data value)
 ;; and lists (where the singleton is a special marker that holds no meaningful data value).
@@ -697,37 +180,642 @@
       (check-equal? (list<-circle (circle-splice (circle<-list [1 2 3 4]) (circle<-list [5 6 7 8])))
                     [1 2 3 4 5 6 7 8]))))
 
-(def (marble-step marble circle scorecard)
-  (def n-players (vector-length scorecard))
-  (def player (remainder marble n-players))
-  (if (zero? (remainder marble 23))
-    (let ((c (circle-move circle -7)))
-      (increment! (vector-ref scorecard player) (+ marble (circle-value c)))
-      (circle-remove c))
-    (circle-splice (circle-singleton marble) (circle-move circle 2))))
 
-(def (marble-play n-players max-marble)
-  (def circle (circle-singleton 0))
-  (def scorecard (make-vector n-players 0))
-  (when (> max-marble 0)
-    (for (marble (in-range 1 (- max-marble 1)))
-      (set! circle (marble-step marble circle scorecard))))
-  (foldl max 0 (vector->list scorecard)))
+;;; DAY 1 https://adventofcode.com/2018/day/1
 
-(def marble-test
-  (test-suite "test suite for marble game"
-    (test-case "test given results"
-      (check-equal? (marble-play 10 1618) 8317)
-      (check-equal? (marble-play 13 7999) 146373)
-      ;; (check-equal? (marble-play 17 1104) 2764) ; BUG? we return 2720 instead
-      (check-equal? (marble-play 21 6111) 54718)
-      (check-equal? (marble-play 30 5807) 37305))))
+(def (day1)
+  (def input (parse-file-lines expect-signed-integer (day-input-file 1)))
+  (def (answer1) (reduce + 0 input)) ;; 445
+  (def (answer2)
+    (generating-find-first-duplicate
+     (generating-sums
+      (generating-indefinitely (generating<-list input))))) ;; 219
+  [(answer1) (answer2)])
 
-(def (day9-answer1)
-  (defvalues (n-players max-marble) (day9-input))
-  (marble-play n-players max-marble)) ; 384288
 
-(def (day9-answer2)
-  (defvalues (n-players max-marble) (day9-input))
-  (marble-play n-players (* max-marble 100))) ; 3189426841
+;;; DAY 2 https://adventofcode.com/2018/day/2
 
+(def (hash-increment! table key (increment 1))
+  (let ((previous (hash-ref table key 0)))
+    (hash-put! table key (+ previous increment))))
+
+(def (least-string-difference-index x y)
+  (let ((lx (string-length x))
+        (ly (string-length y)))
+    (letrec ((r (λ (i)
+                  (if (<= lx i) (if (<= ly i) #f i)
+                      (if (<= ly i) i
+                          (if (eqv? (string-ref x i) (string-ref y i)) (r (+ i 1)) i))))))
+      (r 0))))
+
+(def (list-for-each-pair! l1 l2 f)
+  (for-each! l1 (λ (x1) (for-each! l2 (λ (x2) (f x1 x2))))))
+
+(def (list-for-each-head-tail! l f)
+  (letrec ((r (λ-match
+               ([] (void))
+               ([head . tail]
+                (f head tail)
+                (r tail)))))
+    (r l)))
+
+(def (list-for-each-couple! l f)
+  (list-for-each-head-tail! l (λ (h t) (for-each! t (cut f h <>)))))
+
+(def (day2)
+  (def input (read-file-lines (day-input-file 2)))
+
+  (def (letter-counts id)
+    (let ((counts (hash)))
+      (string-for-each (cut hash-increment! counts <>) id)
+      counts))
+
+  (def (invert-letter-counts id)
+    (invert-hash (letter-counts id)))
+
+  (def (checksum input)
+    (let* ((invert-counts (map invert-letter-counts input))
+           (containing-exactly-2-of-some-letter (length (filter (cut hash-key? <> 2) invert-counts)))
+           (containing-exactly-3-of-some-letter (length (filter (cut hash-key? <> 3) invert-counts))))
+      (* containing-exactly-2-of-some-letter containing-exactly-3-of-some-letter)))
+
+  (def (answer1) (checksum input)) ;; 5456
+
+  (def (string-pair-single-different-index x y)
+    (nest
+     (let ((lx (string-length x))
+           (ly (string-length y))))
+     (and (= lx ly))
+     (let ((i (least-string-difference-index x y))))
+     (and i)
+     (let ((j (+ i 1))))
+     (and (string= x y j lx j lx))
+     i))
+
+  (def (string-pair-without-single-difference x y)
+    (let ((i (string-pair-single-different-index x y)))
+      (and i (string-append (substring x 0 i) (substring x (+ i 1) (string-length x))))))
+
+  (def (answer2)
+    (nest
+     (let/cc k)
+     (list-for-each-couple! (day2-input)) (λ (x y))
+     (when-let (r (string-pair-without-single-difference x y)))
+     (k r))) ;; "megsdlpulxvinkatfoyzxcbvq"
+
+  [(answer1) (answer2)])
+
+
+;;; DAY 3 https://adventofcode.com/2018/day/3
+
+(def (interval-intersection int1 int2)
+  (nest
+   (match int1) ([start1 len1])
+   (match int2) ([start2 len2])
+   (let* ((end1 (+ start1 len1))
+          (end2 (+ start2 len2))
+          (start (max start1 start2))
+          (end (min end1 end2))
+          (len (- end start))))
+   (and (< 0 len) [start len])))
+
+(def (rectangle-intersection rec1 rec2)
+  (nest
+   (match rec1) ([start-x1 start-y1 len-x1 len-y1])
+   (match rec2) ([start-x2 start-y2 len-x2 len-y2])
+   (match (interval-intersection [start-x1 len-x1] [start-x2 len-x2]) (#f #f)) ([start-x len-x])
+   (match (interval-intersection [start-y1 len-y1] [start-y2 len-y2]) (#f #f)) ([start-y len-y])
+   [start-x start-y len-x len-y]))
+
+(def (day3)
+  (def (parse-line port)
+    ((expect-maybe-char #\#) port)
+    (def id (expect-natural port))
+    ((expect-maybe-char #\space) port)
+    ((expect-char #\@) port)
+    ((expect-maybe-char #\space) port)
+    (def min-x (expect-natural port))
+    ((expect-char #\,) port)
+    (def min-y (expect-natural port))
+    ((expect-literal-string ": ") port)
+    (def len-x (expect-natural port))
+    ((expect-char #\x) port)
+    (def len-y (expect-natural port))
+    [id min-x min-y len-x len-y])
+
+  (def input (parse-file-lines parse-line (day-input-file 3)))
+  (def rectangles input)
+
+  (def min-x (extremum<-list < (map second rectangles))) ; 2
+  (def min-y (extremum<-list < (map third rectangles))) ; 0
+  (def max-x
+    (extremum<-list > (map (λ-match ([_ min-x _ len-x _] (+ min-x len-x))) rectangles))) ; 1000
+  (def day3-max-y
+    (extremum<-list > (map (λ-match ([_ min-y _ len-y _] (+ min-y len-y))) rectangles))) ; 1000
+
+  (def (answer1)
+    (def table (make-vector (* 1000 1000) #\.))
+    (def (ixy x y) (+ (* x 1000) y))
+    (def (getxy x y) (vector-ref table (ixy x y)))
+    (def (setxy x y z) (vector-set! table (ixy x y) z))
+    (def (markxy x y)
+      (match (getxy x y)
+        (#\. (setxy x y #\#))
+        (#\# (setxy x y #\O))
+        (#\O (void))))
+    (def (set-rectangle min-x min-y len-x len-y)
+      (for ((x (in-range min-x len-x)))
+        (for ((y (in-range min-y len-y)))
+          (markxy x y))))
+    (for-each! rectangles
+               (λ-match ([_ min-x min-y len-x len-y] (set-rectangle min-x min-y len-x len-y))))
+    (def overlap-count 0)
+    (for ((x (in-range 0 1000)))
+      (for ((y (in-range 0 1000)))
+        (when (eqv? (getxy x y) #\O)
+          (increment! overlap-count))))
+    overlap-count) ; 113716
+
+  (def (answer2)
+    (def rectangles (list->vector rectangles))
+    (def n-rec (vector-length rectangles))
+    (let/cc k
+      (nest
+       (for (i (in-range 0 n-rec)))
+       (let/cc nope)
+       (begin
+         (nest
+          (for (j (in-range 0 n-rec)))
+          (unless (= i j))
+          (when (rectangle-intersection (cdr (vector-ref rectangles i))
+                                        (cdr (vector-ref rectangles j))))
+          (nope))
+         (k (car (vector-ref rectangles i)))))
+      #f)) ; 742
+  [(answer1) (answer2)])
+
+;;; DAY 4 https://adventofcode.com/2018/day/4
+
+(def vector-ref-set! vector-set!)
+
+(def (day4)
+  (def (parse-line line)
+    (def day (substring line 1 11))
+    (def hour (string->number (substring line 12 14)))
+    (def minute (string->number (substring line 15 17)))
+    (def action (string->symbol (string-downcase (substring line 19 24))))
+    (def guard (and (eq? action 'guard)
+                    (string->number (substring line 26
+                                               (if (eqv? (string-ref line 29) #\space) 29 30)))))
+    [day hour minute action guard])
+
+  (def input
+    (!> (day-input-file 4)
+        read-file-lines
+        (cut sort <> string<)
+        (cut map parse-line <>)))
+
+  (def (guard-model model guard)
+    (hash-ensure-ref model guard (λ () [0 (make-vector 60 0)])))
+
+  (def (mark-time-slept model guard time-falls time-wakes)
+    (let ((v (second (guard-model model guard))))
+      (for (i (in-range time-falls (- time-wakes time-falls)))
+        (increment! (vector-ref v i)))))
+
+  (def model
+    (nest
+     (let ((model (hash)) (current-guard #f) (time-falls #f))) (begin0 model)
+     (for-each! input) (λ-match) ([day hour minute action guard])
+     (match action
+       ('guard (set! current-guard guard) (set! time-falls #f)
+               (increment! (car (guard-model model guard))))
+       ('falls (assert! current-guard) (assert-equal! hour 0) (set! time-falls minute))
+       ('wakes (assert! current-guard) (assert! time-falls) (assert-equal! hour 0)
+               (mark-time-slept model current-guard time-falls minute)
+               (set! time-falls #f)))))
+
+  (def sleepiest-guard
+    (!> model
+      hash->list
+      (cut map (λ-match ([id _ v] (cons id (reduce + 0 (vector->list v))))) <>)
+      (cut extremum<-list (comparing-key test: > key: cdr) <>)
+      car))
+
+  (def sleepiest-minute
+    (let* ((v (second (hash-get model sleepiest-guard)))
+           (sleepiest-count (extremum<-list > (vector->list v))))
+      (vector-index (cut eqv? sleepiest-count <>) v)))
+
+  (def (answer1) (* day4-sleepiest-guard day4-sleepiest-minute)) ; 72925
+
+  (def sleepiest-guard-minute
+    (!> model
+        hash->list
+        (nest (λ (x)) (with-list-builder (c)) (for-each! x) (λ-match) ([id _ v])
+              (for (i (in-range 0 60))) (c [id (vector-ref v i) i]))
+        (cut extremum<-list (comparing-key test: > key: second) <>)))
+
+  (def (answer2) (match day4-sleepiest-guard-minute ([guard _ minute] (* guard minute)))) ; 49137
+
+  [(answer1) (answer2)])
+
+
+;;; DAY 5 https://adventofcode.com/2018/day/5
+
+(def (day5)
+  (def input (string-trim-eol (read-file-string (day-input-file 5))))
+
+  (def (complement? x y)
+    (= 32 (bitwise-xor (char->integer x) (char->integer y)))) ; assume ASCII letters
+
+  (def (enqueue x q)
+    (match q
+      ([] [x])
+      ([y . z] (if (complement? x y) z [x y . z]))))
+
+  (def (fold l) (foldl enqueue [] l))
+
+  (def reduced-input (fold (string->list input)))
+
+  (def (answer1) (length reduced-input)) ; 11042
+
+  ;; Given two letters, are they the same "unit type" (terminology from the problem)?
+  ;; NB: assume ASCII letters
+  (def (unit-type-eq? x y)
+    (zero? (bitwise-and (bitwise-xor (char->integer x) (char->integer y)) (bitwise-not #x20))))
+
+  (def (remove-unit-type u)
+    (length (fold (remove (cut unit-type-eq? u <>) reduced-input))))
+
+  (def all-letters (map integer->char (iota 26 65))) ; assume ASCII
+
+  (def (answer2) (extremum<-list < (map remove-unit-type all-letters))) ; 6872
+
+  [(answer1) (answer2)])
+
+
+;;; DAY 6 https://adventofcode.com/2018/day/6
+
+
+(def (manhattan-distance a b)
+  (nest
+   (match a) ([ax ay])
+   (match b) ([bx by])
+   (+ (abs (- ax bx)) (abs (- ay by)))))
+
+(def (day6)
+  (def (parse-line port)
+    (def x (expect-natural port))
+    ((expect-char #\,) port)
+    ((expect-char #\space) port)
+    (def y (expect-natural port))
+    [x y])
+
+  (def input (parse-file-lines day6-parse-line (day-input-file 6)))
+
+  (def len (length input)) ; 50
+
+  (def all-letters-both-cases
+    (!> all-letters list->string (λ (x) (string-append x (string-downcase x)))))
+
+  (def start-x (+ -1 (extremum<-list < (map first input))))
+  (def end-x (+ 3 (extremum<-list > (map first input))))
+  (def start-y (+ -1 (extremum<-list < (map second input))))
+  (def end-y (+ 2 (extremum<-list > (map second input))))
+  (def len-x (- end-x start-x))
+  (def len-y (- end-y start-y))
+  (def (ixy x y) (+ (- x start-x) (* len-x (- y start-y))))
+
+  (def model
+    (nest
+     (let ((v (make-string (* len-x len-y) #\newline)))) (begin0 v)
+     (let ((p (list->vector input))))
+     (for ((x (in-range start-x (- len-x 1)))))
+     (for ((y (in-range start-y len-y))))
+     (let ((mindist (+ len-x len-y))))
+     (for ((i (in-range 0 len))))
+     (let ((dist (manhattan-distance [x y] (vector-ref p i))))
+       #;(prn [[x y] (vector-ref p i) dist mindist i (string-ref all-letters-both-cases i)]))
+     (cond
+      ((< dist mindist)
+       (set! mindist dist)
+       (string-set! v (ixy x y) (string-ref all-letters-both-cases i)))
+      ((= dist mindist)
+       (string-set! v (ixy x y) #\.)))))
+
+  (def infinite-letters
+    (let ((s (make-string len #\.)))
+      (let ((mark (λ (x y)
+                    (let* ((c (string-ref model (ixy x y)))
+                           (i (string-index all-letters-both-cases c)))
+                      (when i
+                        (string-set! s i c))))))
+        (for ((x (in-range start-x (- len-x 2))))
+          (mark x start-y)
+          (mark x (- end-y 1)))
+        (for ((y (in-range start-y (- len-y 1))))
+          (mark start-x y)
+          (mark (- end-x 2) y)))
+      s))
+
+  (def areas
+    (nest
+     (let ((v (make-vector len 0)))) (begin0 v)
+     (for ((x (in-range start-x (- len-x 1)))))
+     (for ((y (in-range start-y len-y))))
+     (let* ((c (string-ref model (ixy x y)))
+            (i (string-index all-letters-both-cases c))))
+     (when (and i (eqv? #\. (string-ref infinite-letters i))))
+     (increment! (vector-ref v i))))
+
+  (def (answer1)
+    (extremum<-list > (vector->list areas))) ; 5626
+
+  (def (answer2)
+    (let ((size 0))
+      (for ((x (in-range start-x (- len-x 1))))
+        (for ((y (in-range start-y len-y)))
+          (when (< (reduce + 0 (map (cut manhattan-distance [x y] <>) input)) 10000)
+            (increment! size))))
+      size)) ; 46554
+
+  [(answer1) (answer2)])
+
+
+;;; DAY 7 https://adventofcode.com/2018/day/7
+
+(def (day7)
+
+  (def (parse-line port)
+    ((expect-literal-string "Step ") port)
+    (def pre (read-char port))
+    ((expect-literal-string " must be finished before step ") port)
+    (def post (read-char port))
+    ((expect-literal-string " can begin.\n") port)
+    [pre post])
+
+  (def input (parse-file-lines parse-line (day-input-file 7)))
+  (def len (length input))
+
+  (assert-equal!
+   all-letters
+   (!> (append (map first input) (map second input))
+       (cut sort <> char<?)
+       (cut delete-duplicates <> eqv?)))
+
+  (def (task-model priority-comparer tasks constraints)
+    (def initial (avl-map<-alist priority-comparer (map (cut cons <> #t) tasks)))
+    (def depends-on (hash))
+    (def blocks (hash))
+    (def (get-depends-on post) (hash-ensure-ref depends-on post make-hash-table))
+    (def (get-blocks pre) (hash-ensure-ref blocks pre make-hash-table))
+    (def (add-constraint pre post)
+      (hash-put! (get-depends-on post) pre #t)
+      (hash-put! (get-blocks pre) post #t)
+      (when (avl-map-key? priority-comparer initial post)
+        (avl-map-remove! priority-comparer initial post)))
+    (for-each! constraints (cut apply add-constraint <>))
+    (values initial get-depends-on get-blocks))
+
+  (def (topological-sort priority-comparer tasks constraints)
+    (defvalues (initial get-depends-on get-blocks) (task-model priority-comparer tasks constraints))
+    (nest
+     (with-list-builder (c))
+     (until (avl-map-empty? initial))
+     (let ((pre (first-value (avl-map-leftmost initial)))))
+     (begin (c pre)
+            (avl-map-remove! priority-comparer initial pre))
+     ((cut hash-for-each <> (get-blocks pre))) (λ (post _))
+     (let ((deps (get-depends-on post))))
+     (begin (hash-remove! deps pre))
+     (when (hash-empty? deps))
+     (avl-map-put! priority-comparer initial post #t)))
+
+  (def (answer1)
+    (list->string (topological-sort char-comparer all-letters input))) ; "BDHNEGOLQASVWYPXUMZJIKRTFC"
+
+  (def (task-duration task)
+    (+ 60 -64 (char->integer task)))
+
+  (def (string<-charset cs)
+    (!> (cond
+         ((list? cs) cs)
+         ((hash-table? cs) (hash-keys cs))
+         ((avl-map? cs) (map first (alist<-avl-map cs))))
+        (cut sort <> char<?)
+        list->string))
+
+  (def (sorted-char-hash-keys h) (list->string (sort (hash-keys h) char<?)))
+
+  (def (schedule-tasks priority-comparer task-duration n-workers tasks constraints)
+    (defvalues (ready get-depends-on get-blocks) (task-model priority-comparer tasks constraints))
+    (def pending (make-empty-avl-map))
+    (def clock 0)
+    (def (done?) (and (avl-map-empty? ready) (avl-map-empty? pending)))
+    (def (can-do?) (and (not (avl-map-empty? ready)) (< 0 n-workers)))
+    (until (done?)
+      (prn [clock 'ready (string<-charset ready) 'pending (alist<-avl-map pending) 'workers n-workers])
+      (cond
+       ((can-do?)
+        (let* ((task (first-value (avl-map-leftmost ready)))
+               (completion-time (+ clock (task-duration task))))
+          (avl-map-remove! priority-comparer ready task)
+          (decrement! n-workers)
+          (prn [clock 'starting-task task 'done completion-time 'pending (alist<-avl-map pending)
+                      'lookup (values->list (avl-map-lookup number-comparer pending completion-time))])
+          (let ((complete-then (avl-map-ref number-comparer pending completion-time [])))
+            (avl-map-put! number-comparer pending completion-time (cons task complete-then)))))
+       (else
+        (let-values (((completion-time complete) (avl-map-leftmost pending)))
+          (set! clock completion-time)
+          (avl-map-remove! number-comparer pending clock)
+          (for-each!
+           complete
+           (λ (task)
+             (increment! n-workers)
+             (prn [clock 'completed-task task (string<-charset (get-blocks task))])
+             (hash-for-each (λ (post _)
+                              (let ((deps (get-depends-on post)))
+                                (hash-remove! deps task)
+                                (when (hash-empty? deps)
+                                  (avl-map-put! priority-comparer ready post #t))))
+                            (get-blocks task))))))))
+    clock)
+
+  (def (answer2)
+    (schedule-tasks char-comparer task-duration 5 all-letters input)) ;; 1107
+
+  [(answer1) (answer2)])
+
+
+;;; DAY 8 https://adventofcode.com/2018/day/8
+
+(def (day8)
+  (def (parse port)
+    (nest
+     (with-list-builder (c))
+     (until (port-eof? port))
+     (begin (c (expect-natural port)))
+     (expect-and-skip-any-whitespace port)))
+
+  (def input (call-with-input-file (day-input-file 8) parse))
+  (def len (length input))
+
+  (def (answer1)
+    (def g (generating<-list input))
+    (def count 0)
+    (def (walk)
+      (def n-children (g))
+      (def n-metadata (g))
+      (for (_ (in-range 0 n-children)) (walk))
+      (for (_ (in-range 0 n-metadata)) (increment! count (g))))
+    (walk)
+    count) ; 40977
+
+  (def (answer2)
+    (def g (generating<-list input))
+    (def count 0)
+    (def (walk)
+      (def n-children (g))
+      (def n-metadata (g))
+      (if (zero? n-children)
+        (reduce + 0 (generating-take g n-metadata))
+        (let* ((children (list->vector (generating-take walk n-children)))
+               (metadata (generating-take g n-metadata)))
+          (reduce + 0 (map (λ (i) (let ((j (- i 1))) (if (< -1 j (vector-length children)) (vector-ref children j) 0))) metadata)))))
+    (walk)) ; 27490
+
+  [(answer1) (answer2)])
+
+;;; DAY 9 https://adventofcode.com/2018/day/9
+
+(def (day9)
+  (def (parse port)
+    (nest
+     (let ((n-players (expect-natural port)))
+       ((expect-literal-string " players; last marble is worth ") port))
+     (let ((last-marble-points (expect-natural port)))
+       ((expect-literal-string " points") port))
+     (values n-players last-marble-points)))
+
+  (def (input) (call-with-input-file (day-input-file 9) parse))
+  (defvalues (n-players last-marble-points) (input))
+
+  (def (iterate-function n fun . v)
+    (if (zero? n)
+      (apply values v)
+      (apply iterate-function (- n 1) fun (values->list (apply fun v)))))
+
+  ;; TODO: to work with much larger numbers, try finger trees?
+
+  (def (marble-step marble circle scorecard)
+    (def n-players (vector-length scorecard))
+    (def player (remainder marble n-players))
+    (if (zero? (remainder marble 23))
+      (let ((c (circle-move circle -7)))
+        (increment! (vector-ref scorecard player) (+ marble (circle-value c)))
+        (circle-remove c))
+      (circle-splice (circle-singleton marble) (circle-move circle 2))))
+
+  (def (marble-play n-players max-marble)
+    (def circle (circle-singleton 0))
+    (def scorecard (make-vector n-players 0))
+    (when (> max-marble 0)
+      (for (marble (in-range 1 (- max-marble 1)))
+        (set! circle (marble-step marble circle scorecard))))
+    (foldl max 0 (vector->list scorecard)))
+
+  (def marble-test
+    (test-suite "test suite for marble game"
+      (test-case "test given results"
+        (check-equal? (marble-play 10 1618) 8317)
+        (check-equal? (marble-play 13 7999) 146373)
+        ;; (check-equal? (marble-play 17 1104) 2764) ; BUG? we return 2720 instead
+        (check-equal? (marble-play 21 6111) 54718)
+        (check-equal? (marble-play 30 5807) 37305))))
+
+  (def (answer1)
+    (defvalues (n-players max-marble) (input))
+    (marble-play n-players max-marble)) ; 384288
+
+  (def (answer2)
+    (defvalues (n-players max-marble) (input))
+    (marble-play n-players (* max-marble 100))) ; 3189426841
+
+  [(answer1) (answer2)])
+
+
+;;; DAY 10 https://adventofcode.com/2018/day/10
+
+(def (sqr x) (* x x))
+
+(def (day10)
+;;(begin ;; <-- use this line instead of the above for debugging
+  (def (parse-line port)
+    ((expect-literal-string "position=<") port)
+    (expect-and-skip-any-whitespace port)
+    (def x (expect-signed-integer port))
+    ((expect-char #\,) port)
+    (expect-and-skip-any-whitespace port)
+    (def y (expect-signed-integer port))
+    ((expect-literal-string "> velocity=<") port)
+    (expect-and-skip-any-whitespace port)
+    (def dx (expect-signed-integer port))
+    ((expect-char #\,) port)
+    (expect-and-skip-any-whitespace port)
+    (def dy (expect-signed-integer port))
+    ((expect-char #\>) port)
+    [x y dx dy])
+  (def (input) (parse-file-lines parse-line (day-input-file 10)))
+  (def points (input))
+
+  (def len (length points))
+  (def sum (reduce (cut map + <> <>) [0 0 0 0] points)) ; the average is sum/len
+  (defvalues (sum-x sum-y sum-dx sum-dy) (apply values sum))
+
+  ;; The message will be visible when the standard deviation is minimal (or close to minimal)?
+  ;; Let's compute the square of the standard deviation at time t:
+  ;; sd2 = Sum [ (x-ax + t*(dx-dax))^2 + (y-ay + t*(dy-day))^2 ]
+  ;; The derivative by time is:
+  ;; sd2 = Sum [ 2*((dx-dax)^2+(dy-day)^2)*t + 2*((x-ax)*(dx-dax)+(y-ay)*(dy-day)) ]
+  ;; Let's compute the two factors A*t + B multiplied by k=len^2/2.
+  (def ksd2-a
+    (!> points
+        (cut map (λ-match ([_ _ dx dy] (+ (sqr (- (* len dx) sum-dx)) (sqr (- (* len dy) sum-dy))))) <>)
+        (cut reduce + 0 <>)))
+  (def ksd2-b
+    (!> points
+        (cut map (λ-match ([x y dx dy] (+ (* (- (* len x) sum-x) (- (* len dx) sum-dx))
+                                          (* (- (* len y) sum-y) (- (* len dy) sum-dy))))) <>)
+        (cut reduce + 0 <>)))
+  ;; The perfect time is around -B/A
+  (def t (round (/ (- ksd2-b) ksd2-a)))
+
+  (def (picture-at-t t)
+    (def points-at-t (map (λ-match ([x y dx dy] [(+ x (* dx t)) (+ y (* dy t))])) points))
+    (def start-x (reduce min 0 (map first points-at-t)))
+    (def end-x (+ 1 (reduce max 0 (map first points-at-t))))
+    (def len-x (+ 1 (- end-x start-x)))
+    (def start-y (reduce min 0 (map second points-at-t)))
+    (def end-y (+ 1 (reduce max 0 (map second points-at-t))))
+    (def len-y (- end-y start-y))
+    (def message (make-string (* len-x len-y) #\.))
+    (def (ixy x y) (+ (- x start-x) (* len-x (- y start-y))))
+    (def (setxy x y z) (string-set! message (ixy x y) z))
+    (for-each (λ-match ([x y] (setxy x y #\#))) points-at-t)
+    (for ((y (in-range start-y len-y))) (setxy end-x y #\newline))
+    (newline)(display message)
+    [start-x end-x start-y end-y message])
+
+  ;; GERBIL BUG: If I use (begin ...) instead of (def (day10) ...)
+  ;; then the following (picture-at-t t) works,
+  ;; but if I use (def (day10) ...), then it causes a compile-time error, and so does
+  ;; (def (foo x) x) (foo t) or (foo #f)... WTF?
+
+  ;;  (picture-at-t t) ;; RBCZAEPP
+
+  (def (answer1) "RBCZAEPP")
+  (def (answer2) 10076)
+
+  [(answer1) (answer2)])
