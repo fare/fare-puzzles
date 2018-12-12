@@ -4,7 +4,7 @@
   :gerbil/gambit/bits
   :std/iter :std/misc/list :std/misc/repr :std/misc/string
   :std/sort :std/srfi/1 :std/srfi/43 :std/sugar
-  :clan/utils/assert :clan/utils/base :clan/utils/basic-parsers
+  :clan/utils/assert :clan/utils/base :clan/utils/basic-parsers :clan/utils/debug
   :clan/utils/generator :clan/utils/hash :clan/utils/number
   :clan/utils/stateful-avl-map :clan/utils/vector)
 
@@ -813,9 +813,140 @@
   ;; but if I use (def (day10) ...), then it causes a compile-time error, and so does
   ;; (def (foo x) x) (foo t) or (foo #f)... WTF?
 
-  ;;  (picture-at-t t) ;; RBCZAEPP
+  ;;(picture-at-t t) ;; RBCZAEPP
 
   (def (answer1) "RBCZAEPP")
   (def (answer2) 10076)
+
+  [(answer1) (answer2)])
+
+
+;;; DAY 11 https://adventofcode.com/2018/day/11
+
+(def foo [])
+(def bar [])
+
+;;(def (day11)
+(begin
+  (def input 5468)
+
+  (def len 300)
+
+  (def (hundred-digit x) (remainder (floor-quotient x 100) 10))
+  (def (power-level x y (grid-serial-number input))
+    (def rack-id (+ x 10))
+    (- (hundred-digit (* (+ (* rack-id y) grid-serial-number) rack-id)) 5))
+
+  (check-equal? (power-level 3 5 8) 4)
+  (check-equal? (power-level 122 79 57) -5)
+  (check-equal? (power-level 217 196 39) 0)
+  (check-equal? (power-level 101 153 71) 4)
+
+  (def (3x3-square-power x y gsn)
+    (+ (power-level x y gsn)
+       (power-level (+ x 1) y gsn)
+       (power-level (+ x 2) y gsn)
+       (power-level x (+ y 1) gsn)
+       (power-level (+ x 1) (+ y 1) gsn)
+       (power-level (+ x 2) (+ y 1) gsn)
+       (power-level x (+ y 2) gsn)
+       (power-level (+ x 1) (+ y 2) gsn)
+       (power-level (+ x 2) (+ y 2) gsn)))
+
+  (def (top-3x3-square gsn)
+    (def max (3x3-square-power 1 1 gsn))
+    (def best [1 1 min])
+    (for (x (in-range 1 (- len 2)))
+      (for (y (in-range 1 (- len 2)))
+        (let ((power (3x3-square-power x y gsn)))
+          (when (> power max)
+            (set! max power)
+            (set! best [x y power])))))
+    best)
+
+  (check-equal? (top-3x3-square 18) [33 45 29])
+  (check-equal? (top-3x3-square 42) [21 61 30])
+
+  (def (answer1) (top-3x3-square input)) ;; [243 64 30] -> 243,64
+
+  (def (top-nxn-square gsn (len len))
+    (def max 0)
+    (def best [1 1 0 0])
+
+    (def (ixy x y)
+      (def r (+ (* (- x 1) len) (- y 1)))
+      ;;(set! foo ['ixy x y r])
+      r)
+    (def (getxy table x y) (vector-ref table (ixy x y)))
+    (def (setxy! table x y z) (vector-set! table (ixy x y) z))
+    (def getxy-set! setxy!)
+    (def (incxy! table x y z) (increment! (getxy table x y) z))
+
+    (def (prvec v (name #f))
+      (when name (prn name))
+      (for (y (in-range 1 len))
+        (for (x (in-range 1 len))
+          (printf " ~d" (getxy v x y)))
+        (newline)))
+
+    ;; define and initialize power at the x,y cell
+    (def xy-power (make-vector (* len len) 0))
+    (for (x (in-range 1 len))
+      (for (y (in-range 1 len))
+        (setxy! xy-power x y (power-level x y gsn))))
+    ;(prvec xy-power 'xy-power)
+
+    ;; define and initialize power on the horizontal line from x-n+1,y to x,y
+    (def horizontal-power (vector-copy xy-power))
+    ;(prvec horizontal-power ['horizontal-power 0])
+
+    ;; define and initialize power on the vertical line from x,y-n+1 to x,y-1
+    (def vertical-power (make-vector (* len len) 0))
+    ;(prvec vertical-power ['vertical-power 0])
+
+    ;; define and initialize power on the square from x-n+1,y-n+1 to x,y
+    (def square-power (make-vector (* len len) 0))
+    ;(prvec square-power ['square-power 0])
+
+    ;; Loop to find the best square
+    (for (n (in-range 1 (- len 1)))
+      (for (x (in-range (- len 1) (- len n) -1))
+        (for (y (in-range (- len 1) (- len n) -1))
+          (let* ((xright (- x n -1))
+                 (ytop (- y n -1))
+                 ;;(_ (set! bar ['n n 'x x 'y y 'yright xright 'ytop ytop]))
+                 (horizontal (+ (getxy horizontal-power x y) (getxy xy-power xright y)))
+                 (vertical (+ (getxy vertical-power x y) (getxy xy-power x ytop)))
+                 (square (+ (if (> n 1) (getxy square-power (- x 1) (- y 1)) 0)
+                            horizontal vertical)))
+            (setxy! horizontal-power x y horizontal)
+            (setxy! vertical-power x y vertical)
+            (setxy! square-power x y square)
+            (when (> square max)
+              (set! max square)
+              (set! best [xright ytop n square])))))
+      ;;(prvec horizontal-power ['horizontal-power n])
+      ;;(prvec vertical-power ['vertical-power n])
+      ;;(prvec square-power ['square-power n])
+      )
+    best)
+
+  (def (nxn-square x y n g)
+    (def s 0)
+    (for (x (in-range x n))
+      (for (y (in-range y n))
+        ;;(prn [x y g (power-level x y g) (+ s (power-level x y g))])
+        (increment! s (power-level x y g))))
+    s)
+
+  (check-equal? (nxn-square 33 45 3 18) 29)
+  (check-equal? (nxn-square 21 61 3 42) 30)
+  (check-equal? (nxn-square 90 269 16 18) 113)
+  (check-equal? (nxn-square 232 251 12 42) 119)
+
+  ;;(check-equal? (top-nxn-square 18) [90 269 16 113])
+  ;;(check-equal? (top-nxn-square 42) [232 251 12 119])
+
+  (def (answer2) (top-nxn-square input)) ;; [90 101 15 ???? 167]
 
   [(answer1) (answer2)])
