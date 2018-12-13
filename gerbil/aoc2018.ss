@@ -34,13 +34,15 @@
       (parse-error! 'expect-signed-integer "Neither a sign nor a digit in requested base"
                     char base port)))))
 
-(def (parse-file-lines parse-line file)
+(def (parse-lines parse-line port)
   (nest
    (with-list-builder (c))
-   (call-with-input-file file) (λ (port))
    (until (port-eof? port))
    (begin (c (parse-line port)))
    (expect-eol port)))
+
+(def (parse-file-lines parse-line file)
+  (call-with-input-file file (cut parse-lines parse-line <>)))
 
 ;;; Generating tweaks, used by day 1
 (def (generating-decons on-cons on-eof g)
@@ -82,6 +84,12 @@
 (def (generating-indefinitely gg)
   (generating<-for-each (λ (yield) (while #t (generating-for-each! (gg) yield)))))
 
+
+;; Used by circle below (day 9), and by day 12
+(def (iterate-function n fun . v)
+  (if (zero? n)
+    (apply values v)
+    (apply iterate-function (- n 1) fun (values->list (apply fun v)))))
 
 ;;; Doubly-linked data structures, used by Day 9
 
@@ -702,11 +710,6 @@
   (def (input) (call-with-input-file (day-input-file 9) parse))
   (defvalues (n-players last-marble-points) (input))
 
-  (def (iterate-function n fun . v)
-    (if (zero? n)
-      (apply values v)
-      (apply iterate-function (- n 1) fun (values->list (apply fun v)))))
-
   ;; TODO: to work with much larger numbers, try finger trees?
 
   (def (marble-step marble circle scorecard)
@@ -826,8 +829,7 @@
 (def foo [])
 (def bar [])
 
-;;(def (day11)
-(begin
+(def (day11)
   (def input 5468)
 
   (def len 300)
@@ -873,62 +875,66 @@
     (def max 0)
     (def best [1 1 0 0])
 
-    (def (ixy x y)
-      (def r (+ (* (- x 1) len) (- y 1)))
+    (def (ixy l x y)
+      (def r (+ (* (- x 1) l) (- y 1)))
       ;;(set! foo ['ixy x y r])
       r)
-    (def (getxy table x y) (vector-ref table (ixy x y)))
-    (def (setxy! table x y z) (vector-set! table (ixy x y) z))
+    (def (getxy table l x y) (vector-ref table (ixy l x y)))
+    (def (setxy! table l x y z) (vector-set! table (ixy l x y) z))
     (def getxy-set! setxy!)
-    (def (incxy! table x y z) (increment! (getxy table x y) z))
+    (def (incxy! table l x y z) (increment! (getxy table l x y) z))
 
-    (def (prvec v (name #f))
+    (def (prvec v l (name #f))
       (when name (prn name))
-      (for (y (in-range 1 len))
-        (for (x (in-range 1 len))
-          (printf " ~d" (getxy v x y)))
+      (for (y (in-range 1 l))
+        (for (x (in-range 1 l))
+          (printf " ~d" (getxy v l x y)))
         (newline)))
 
+    (def (make-grid l fun)
+      (def grid (make-vector (* l l) 0))
+      (for (x (in-range 1 l))
+        (for (y (in-range 1 l))
+          (setxy! grid l x y (fun x y))))
+      grid)
+
     ;; define and initialize power at the x,y cell
-    (def xy-power (make-vector (* len len) 0))
-    (for (x (in-range 1 len))
-      (for (y (in-range 1 len))
-        (setxy! xy-power x y (power-level x y gsn))))
-    ;(prvec xy-power 'xy-power)
+    (def xy-power (make-grid len (cut power-level <> <> gsn)))
+    (prvec xy-power len 'xy-power)
 
     ;; define and initialize power on the horizontal line from x-n+1,y to x,y
     (def horizontal-power (vector-copy xy-power))
-    ;(prvec horizontal-power ['horizontal-power 0])
+    (prvec horizontal-power len ['horizontal-power 0])
 
     ;; define and initialize power on the vertical line from x,y-n+1 to x,y-1
     (def vertical-power (make-vector (* len len) 0))
-    ;(prvec vertical-power ['vertical-power 0])
+    (prvec vertical-power len ['vertical-power 0])
 
     ;; define and initialize power on the square from x-n+1,y-n+1 to x,y
     (def square-power (make-vector (* len len) 0))
-    ;(prvec square-power ['square-power 0])
+    (prvec square-power len ['square-power 0])
+
 
     ;; Loop to find the best square
-    (for (n (in-range 1 (- len 1)))
-      (for (x (in-range (- len 1) (- len n) -1))
-        (for (y (in-range (- len 1) (- len n) -1))
-          (let* ((xright (- x n -1))
-                 (ytop (- y n -1))
+    (for (n (in-range 1 len))
+      (for (x (in-range 1 (- len n -1)))
+        (for (y (in-range 1 (- len n -1)))
+          (let* ((xright (+ x n -1))
+                 (ybottom (+ y n -1))
                  ;;(_ (set! bar ['n n 'x x 'y y 'yright xright 'ytop ytop]))
                  (horizontal (+ (getxy horizontal-power x y) (getxy xy-power xright y)))
-                 (vertical (+ (getxy vertical-power x y) (getxy xy-power x ytop)))
-                 (square (+ (if (> n 1) (getxy square-power (- x 1) (- y 1)) 0)
+                 (vertical (+ (getxy vertical-power x y) (getxy xy-power x ybottom)))
+                 (square (+ (if (> n 1) (getxy square-power (+ x 1) (+ y 1)) 0)
                             horizontal vertical)))
             (setxy! horizontal-power x y horizontal)
             (setxy! vertical-power x y vertical)
             (setxy! square-power x y square)
             (when (> square max)
               (set! max square)
-              (set! best [xright ytop n square])))))
-      ;;(prvec horizontal-power ['horizontal-power n])
-      ;;(prvec vertical-power ['vertical-power n])
-      ;;(prvec square-power ['square-power n])
-      )
+              (set! best [x y n square])))))
+      (prvec horizontal-power (- len n -1) ['horizontal-power n])
+      (prvec vertical-power (- len n -1) ['vertical-power n])
+      (prvec square-power (- len n -1) ['square-power n]))
     best)
 
   (def (nxn-square x y n g)
@@ -950,3 +956,117 @@
   (def (answer2) (top-nxn-square input)) ;; [90 101 15 ???? 167]
 
   [(answer1) (answer2)])
+
+
+;;; DAY 12: A Cellular automaton -- https://adventofcode.com/2018/day/12
+
+;;(def (day12)
+
+(begin
+  (def (parse-initial-state port)
+    ((expect-literal-string "initial state: ") port)
+    (begin0 (expect-line port) (expect-eol port)))
+
+  (def (parse-rule-line line)
+    (assert-equal! (string-length line) 10)
+    (def in (substring line 0 5))
+    (assert-equal! (substring line 5 9) " => ")
+    (def out (string-ref line 9))
+    [in out])
+
+  (defvalues (initial-state rules)
+    (call-with-input-file (day-input-file 12)
+      (λ (port)
+        (left-to-right values (parse-initial-state port) (map parse-rule-line (read-all-as-lines port))))))
+
+  (assert-equal! 32 (length rules)) ; all the cases are handled.
+  ;;(sort rules (comparing-key key: first test: string>))
+
+  (def bit<-char (λ-match (#\. 0) (#\# 1)))
+  (def char<-bit (λ-match (0 #\.) (1 #\#)))
+  (def (int<-string s)
+    (def a 0)
+    (def p 1)
+    (for ((i (in-range 0 (string-length s))))
+      (unless (zero? (bit<-char (string-ref s i)))
+        (increment! a p))
+      (increment! p p))
+    a)
+  (def (string<-int n)
+    (call-with-output-string []
+      (λ (port)
+        (for ((i (in-range 0 (integer-length n))))
+          (display (char<-bit (extract-bit-field 1 i n)) port)))))
+
+  (defvalues (test-state test-rules)
+    (values "#..#.#..##......###...###"
+            [["...##" #\#]
+             ["..#.." #\#]
+             [".#..." #\#]
+             [".#.#." #\#]
+             [".#.##" #\#]
+             [".##.." #\#]
+             [".####" #\#]
+             ["#.#.#" #\#]
+             ["#.###" #\#]
+             ["##.#." #\#]
+             ["##.##" #\#]
+             ["###.." #\#]
+             ["###.#" #\#]
+             ["####." #\#]]))
+
+  (def (prstate offset state)
+    (printf "~d ~a\n" offset (string<-int state)))
+
+  (def (normalize-state offset state)
+    (def fbs (first-bit-set state))
+    (values (+ offset fbs) (arithmetic-shift state (- fbs))))
+  (def (next-generation offset state transitions)
+    (set! (values offset state) (normalize-state offset state))
+    ;;(prstate offset state)
+    (def n 0)
+    (def p 1)
+    (for (i (in-range 0 (+ 4 (integer-length state))))
+      (let ((surroundings (bitwise-and 31 (arithmetic-shift state (- 4 i)))))
+        (unless (zero? (vector-ref transitions surroundings))
+          (increment! n p))
+        (increment! p p)))
+    (values (- offset 2) n))
+
+  (def (transitions<-rules rules)
+    (def transitions (make-vector 32 0))
+    (nest (for-each! rules) (λ-match) ([surroundings result])
+          (vector-set! transitions (int<-string surroundings) (bit<-char result)))
+    transitions)
+
+  (def (cell-automaton generations offset state rules)
+    (def transitions (transitions<-rules rules))
+    (iterate-function generations (cut next-generation <> <> transitions) 0 (int<-string state)))
+
+  (def (summarize-state offset state)
+    (def s 0)
+    (for (i (in-range 0 (integer-length state)))
+      (when (test-bit-field? 1 i state)
+        (increment! s (+ i offset))))
+    s)
+
+  ;; Test value
+  (let-values (((offset state) (cell-automaton 20 0 test-state test-rules)))
+    (assert-equal! (summarize-state offset state) 325))
+
+  (def (answer1)
+    (defvalues (offset state) (cell-automaton 20 0 initial-state rules))
+    ;;(prstate offset state)
+    (summarize-state offset state))
+
+  ;; For answer2, we need fifty billion generations, so, basically, hashlife...
+  ;; except that this initial state converges into a set of gliders after 185 generations.
+  (def (answer2)
+    (defvalues (offset state) (cell-automaton 185 0 initial-state rules))
+    (def transitions (transitions<-rules rules))
+    (defvalues (next-offset next-state) (next-generation offset state transitions))
+    (assert-equal! next-state state)
+    (assert-equal! next-offset (+ 1 offset))
+    (summarize-state (+ 50000000000 -185 offset) state))
+
+  [(answer1) (answer2)]) ;; 2349 2100000001168
