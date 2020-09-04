@@ -4,8 +4,8 @@
   :gerbil/gambit/bits
   :std/iter :std/misc/list :std/misc/repr :std/misc/string
   :std/sort :std/srfi/1 :std/srfi/43 :std/sugar
-  :clan/utils/assert :clan/utils/base :clan/utils/basic-parsers :clan/utils/debug
-  :clan/utils/generator :clan/utils/hash :clan/utils/number
+  :clan/utils/assert :clan/utils/base :clan/utils/basic-parsers :clan/utils/basic-printers
+  :clan/utils/debug :clan/utils/generator :clan/utils/hash :clan/utils/number
   :clan/utils/stateful-avl-map :clan/utils/vector)
 
 ;;; General purpose utilities
@@ -85,13 +85,13 @@
   (generating<-for-each (λ (yield) (while #t (generating-for-each! (gg) yield)))))
 
 
-;; Used by circle below (day 9), and by day 12
+;; Used by circle below (day 9, 14), and by day 12
 (def (iterate-function n fun . v)
   (if (zero? n)
     (apply values v)
     (apply iterate-function (- n 1) fun (values->list (apply fun v)))))
 
-;;; Doubly-linked data structures, used by Day 9
+;;; Doubly-linked data structures, used by Day 9, 14
 
 ;; Mutable doubly-linked data structure for ring buffers (where every node holds one data value)
 ;; and lists (where the singleton is a special marker that holds no meaningful data value).
@@ -112,7 +112,7 @@
 
 ;; Splice two circles at given points... together if apart, or apart if together. Return the first point.
 ;; (Circle V) <- (Circle V) (Circle V)
-(def (circle-splice c+ d+) ; splice the two circles together
+(def (circle-splice! c+ d+) ; splice the two circles together
   (let ((c- (circle-prev c+))
         (d- (circle-prev d+)))
     (set! (circle-next c-) d+)
@@ -130,23 +130,28 @@
 
 ;; Splice the value at the cursor, just before the current point
 ;; (Circle V) <- (Circle V) V
-(def (circle-add c v)
-  (circle-splice c (circle-singleton v)))
+(def (circle-add! c v)
+  (circle-splice! c (circle-singleton v)))
 
 ;; Splice the value at the cursor, just before the current point
 ;; (Circle V) <- V (Circle V)
-(def (circle-push v c)
-  (circle-add c v))
+(def (circle-push! v c)
+  (circle-add! c v))
 
 ;; Splice the value after the current point
 ;; (Circle V) <- (Circle V) V
-(def (circle-add-next c v)
-  (circle-add (circle-next c) v) c)
+(def (circle-add-next! c v)
+  (circle-add! (circle-next c) v) c)
 
 ;; Splice the value after the current point, return the next point (the current point becomes a singleton)
 ;; (Circle V) <- (Circle V)
-(def (circle-remove c)
-  (circle-splice (circle-next c) c))
+(def (circle-remove! c)
+  (circle-splice! (circle-next c) c))
+
+(def (circle-for-each+ fun start stop)
+  (fun start) (circle-for-each- fun (circle-next start) stop))
+(def (circle-for-each- fun start stop)
+  (unless (eq? start stop) (circle-for-each+ fun start stop)))
 
 ;; Return a list of elements after the first point and before the second, including the current node
 ;; (List V) <- (Circle V) (Circle V)
@@ -163,12 +168,18 @@
 (def (list<-circle c)
   (circle-elements+ c c))
 
+;; Return a list of n elements from the circle (moving forward)
+;; (List V) <- (Circle V) Integer
+(def (circle-take c n)
+  (with-list-builder (l)
+    (for (_ (in-range 0 n)) (l (circle-value c)) (set! c (circle-next c)))))
+
 ;; Create a circle from the list of elements
 ;; (Circle V) <- (List V)
 (def (circle<-list l)
   (match l
     ([] (error "cannot make circle from empty list"))
-    ([h . t] (foldl circle-push (circle-singleton h) t))))
+    ([h . t] (foldl circle-push! (circle-singleton h) t))))
 
 (defmethod {:pr circle}
   (λ (c (port (current-output-port)) (options (current-representation-options)))
@@ -185,7 +196,7 @@
       (check-equal? (list<-circle (circle<-list [1 2 3 4])) [1 2 3 4]))
 
     (test-case "test splicing"
-      (check-equal? (list<-circle (circle-splice (circle<-list [1 2 3 4]) (circle<-list [5 6 7 8])))
+      (check-equal? (list<-circle (circle-splice! (circle<-list [1 2 3 4]) (circle<-list [5 6 7 8])))
                     [1 2 3 4 5 6 7 8]))))
 
 
@@ -718,8 +729,8 @@
     (if (zero? (remainder marble 23))
       (let ((c (circle-move circle -7)))
         (increment! (vector-ref scorecard player) (+ marble (circle-value c)))
-        (circle-remove c))
-      (circle-splice (circle-singleton marble) (circle-move circle 2))))
+        (circle-remove! c))
+      (circle-splice! (circle-singleton marble) (circle-move circle 2))))
 
   (def (marble-play n-players max-marble)
     (def circle (circle-singleton 0))
@@ -961,7 +972,6 @@
 ;;; DAY 12: A Cellular automaton -- https://adventofcode.com/2018/day/12
 
 ;;(def (day12)
-
 (begin
   (def (parse-initial-state port)
     ((expect-literal-string "initial state: ") port)
@@ -1070,3 +1080,94 @@
     (summarize-state (+ 50000000000 -185 offset) state))
 
   [(answer1) (answer2)]) ;; 2349 2100000001168
+
+
+;; DAY 13 https://adventofcode.com/2018/day/13
+
+;;(def (day13)
+(begin
+  (def test-circuit "\
+/->-\\        
+|   |  /----\\
+| /-+--+-\\  |
+| | |  | v  |
+\\-+-/  \\-+--/
+  \\------/   ")
+  (def input-circuit (read-file-string (day-input-file 13)))
+  (def char<-direction ">v<^")
+  (def dx<-direction #(1 0 -1 0))
+  (def dy<-direction #(0 1 0 -1))
+  (def coordinate<-position (hash))
+)
+
+;; DAY 14 https://adventofcode.com/2018/day/14
+
+;;(def (day14)
+(begin
+  (def input 894501)
+  (def (list<-integer n)
+    (!> n number->string string->list (cut map char-digit <>)))
+  (def (play stop)
+    (def start [3 7])
+    (def board (circle<-list start))
+    (def len (length start))
+    (def elf1 board)
+    (def elf2 (circle-next elf1))
+    (def (step)
+      (def v1 (circle-value elf1))
+      (def v2 (circle-value elf2))
+      (def new-digits (list<-integer (+ v1 v2)))
+      (circle-splice! board (circle<-list new-digits))
+      (increment! len (length new-digits))
+      (set! elf1 (circle-move elf1 (+ 1 v1)))
+      (set! elf2 (circle-move elf2 (+ 1 v2))))
+    (def (prb (port (current-output-port)))
+      (def (f x) (if (eq? x elf1) (begin (display #\( port) (g x) (display #\) port)) (g x)))
+      (def (g x) (if (eq? x elf2) (begin (display #\[ port) (h x) (display #\] port)) (h x)))
+      (def (h x) (display (circle-value x) port))
+      (def first? #t)
+      (def (p x) (unless first? (display #\space port)) (f x) (set! first? #f))
+      (circle-for-each+ p board board)
+      (newline port))
+    ;;(prb)
+    (def (loop)
+      (or (stop board len)
+          (begin
+            (step)
+            ;;(prb)
+            (loop))))
+    (loop))
+  (def (digits-after n (l 10))
+    (def n+l (+ n l))
+    (play (λ (board len)
+            (and (>= len n+l)
+                 (!> board
+                     (cut circle-move <> (- n len))
+                     (cut circle-take <> l)
+                     (cut map digit-char <>)
+                     list->string)))))
+  (assert-equal! (digits-after 9) "5158916779")
+  (assert-equal! (digits-after 5) "0124515891")
+  (assert-equal! (digits-after 18) "9251071085")
+  (assert-equal! (digits-after 2018) "5941429882")
+  (def (answer1) (digits-after input)) ;; "2157138126"
+  (def (steps-before output)
+    (def l (string-length output))
+    (def o (map char-digit (string->list output)))
+    (def ll 0)
+    (let/cc return
+      (play (λ (board len)
+              (def b (circle-move board (- ll len)))
+              (for (i (in-range ll (- len ll)))
+                (when (equal? (circle-take b l) o)
+                  (return i))
+                (set! b (circle-next b)))
+              #f))))
+  (assert-equal! (steps-before "51589") 9)
+  (assert-equal! (steps-before "01245") 5)
+  (assert-equal! (steps-before "92510") 18)
+  (assert-equal! (steps-before "59414") 2018)
+  ;; Brute force might not be enough for this -- we need hash-consing?
+  ;; Or just more efficient skipping to next number? Or both?
+  (def (answer2) #f) ;; (steps-before (number->string input)))
+  [(answer1) (answer2)])
