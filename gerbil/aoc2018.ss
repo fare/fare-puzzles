@@ -2,47 +2,17 @@
 
 (import
   :gerbil/gambit/bits
-  :std/iter :std/misc/list :std/misc/repr :std/misc/string
-  :std/sort :std/srfi/1 :std/srfi/43 :std/sugar
-  :clan/utils/assert :clan/utils/base :clan/utils/basic-parsers :clan/utils/basic-printers
-  :clan/utils/debug :clan/utils/generator :clan/utils/hash :clan/utils/number
-  :clan/utils/stateful-avl-map :clan/utils/vector)
+  :std/assert
+  :std/format :std/iter :std/misc/hash :std/misc/list :std/misc/number
+  :std/misc/ports :std/misc/repr :std/misc/string
+  :std/sort :std/srfi/1 :std/srfi/13 :std/srfi/43 :std/sugar :std/test
+  :scheme/base ;; :std/srfi/141
+  :clan/assert :clan/base :clan/basic-parsers :clan/basic-printers
+  :clan/debug :clan/generator :clan/hash :clan/list :clan/number
+  :clan/source :clan/stateful-avl-map :clan/vector)
 
 ;;; General purpose utilities
-;; TODO: move those definitions to clan at some point, then maybe gerbil itself.
-(defsyntax (this-source-directory stx)
-  (syntax-case stx ()
-    ((_)
-     (let (path (gx#core-resolve-path "" (stx-source stx)))
-       (with-syntax ((txt path))
-         #'(quote txt))))))
-
-(def (day-input-file n) (path-expand (format "aoc2018-~d.input" n) (this-source-directory)))
-
-(def (expect-signed-integer port (base 10))
-  (let ((char (peek-char port)))
-    (cond
-     ((eqv? char #\+)
-      (read-char port)
-      (expect-natural port base))
-     ((eqv? char #\-)
-      (read-char port)
-      (- (expect-natural port base)))
-     ((char-digit char)
-      (expect-natural port base))
-     (else
-      (parse-error! 'expect-signed-integer "Neither a sign nor a digit in requested base"
-                    char base port)))))
-
-(def (parse-lines parse-line port)
-  (nest
-   (with-list-builder (c))
-   (until (port-eof? port))
-   (begin (c (parse-line port)))
-   (expect-eol port)))
-
-(def (parse-file-lines parse-line file)
-  (call-with-input-file file (cut parse-lines parse-line <>)))
+(def (day-input-file n) (path-expand (format "data/aoc2018-~d.input" n) (this-source-directory)))
 
 ;;; Generating tweaks, used by day 1
 (def (generating-decons on-cons on-eof g)
@@ -278,7 +248,7 @@
   (def (answer2)
     (nest
      (let/cc k)
-     (list-for-each-couple! (day2-input)) (λ (x y))
+     (list-for-each-couple! (input)) (λ (x y))
      (when-let (r (string-pair-without-single-difference x y)))
      (k r))) ;; "megsdlpulxvinkatfoyzxcbvq"
 
@@ -414,21 +384,21 @@
                (mark-time-slept model current-guard time-falls minute)
                (set! time-falls #f)))))
 
-  (def sleepiest-guard
+  (def day4-sleepiest-guard
     (!> model
       hash->list
       (cut map (λ-match ([id _ v] (cons id (reduce + 0 (vector->list v))))) <>)
       (cut extremum<-list (comparing-key test: > key: cdr) <>)
       car))
 
-  (def sleepiest-minute
-    (let* ((v (second (hash-get model sleepiest-guard)))
+  (def day4-sleepiest-minute
+    (let* ((v (second (hash-get model day4-sleepiest-guard)))
            (sleepiest-count (extremum<-list > (vector->list v))))
       (vector-index (cut eqv? sleepiest-count <>) v)))
 
   (def (answer1) (* day4-sleepiest-guard day4-sleepiest-minute)) ; 72925
 
-  (def sleepiest-guard-minute
+  (def day4-sleepiest-guard-minute
     (!> model
         hash->list
         (nest (λ (x)) (with-list-builder (c)) (for-each! x) (λ-match) ([id _ v])
@@ -441,6 +411,7 @@
 
 
 ;;; DAY 5 https://adventofcode.com/2018/day/5
+(def all-letters (map integer->char (iota 26 65))) ; assume ASCII
 
 (def (day5)
   (def input (string-trim-eol (read-file-string (day-input-file 5))))
@@ -467,8 +438,6 @@
   (def (remove-unit-type u)
     (length (fold (remove (cut unit-type-eq? u <>) reduced-input))))
 
-  (def all-letters (map integer->char (iota 26 65))) ; assume ASCII
-
   (def (answer2) (extremum<-list < (map remove-unit-type all-letters))) ; 6872
 
   [(answer1) (answer2)])
@@ -484,7 +453,7 @@
    (+ (abs (- ax bx)) (abs (- ay by)))))
 
 (def (day6)
-  (def (parse-line port)
+  (def (day6-parse-line port)
     (def x (expect-natural port))
     ((expect-char #\,) port)
     ((expect-char #\space) port)
@@ -674,7 +643,7 @@
   (def (parse port)
     (nest
      (with-list-builder (c))
-     (until (port-eof? port))
+     (until (char-port-eof? port))
      (begin (c (expect-natural port)))
      (expect-and-skip-any-whitespace port)))
 
@@ -933,13 +902,13 @@
           (let* ((xright (+ x n -1))
                  (ybottom (+ y n -1))
                  ;;(_ (set! bar ['n n 'x x 'y y 'yright xright 'ytop ytop]))
-                 (horizontal (+ (getxy horizontal-power x y) (getxy xy-power xright y)))
-                 (vertical (+ (getxy vertical-power x y) (getxy xy-power x ybottom)))
-                 (square (+ (if (> n 1) (getxy square-power (+ x 1) (+ y 1)) 0)
+                 (horizontal (+ (getxy horizontal-power len x y) (getxy xy-power len xright y)))
+                 (vertical (+ (getxy vertical-power len x y) (getxy xy-power len x ybottom)))
+                 (square (+ (if (> n 1) (getxy square-power len (+ x 1) (+ y 1)) 0)
                             horizontal vertical)))
-            (setxy! horizontal-power x y horizontal)
-            (setxy! vertical-power x y vertical)
-            (setxy! square-power x y square)
+            (setxy! horizontal-power len x y horizontal)
+            (setxy! vertical-power len x y vertical)
+            (setxy! square-power len x y square)
             (when (> square max)
               (set! max square)
               (set! best [x y n square])))))
@@ -971,8 +940,7 @@
 
 ;;; DAY 12: A Cellular automaton -- https://adventofcode.com/2018/day/12
 
-;;(def (day12)
-(begin
+(def (day12)
   (def (parse-initial-state port)
     ((expect-literal-string "initial state: ") port)
     (begin0 (expect-line port) (expect-eol port)))
@@ -1084,8 +1052,7 @@
 
 ;; DAY 13 https://adventofcode.com/2018/day/13
 
-;;(def (day13)
-(begin
+(def (day13)
   (def test-circuit "\
 /->-\\        
 |   |  /----\\
@@ -1098,15 +1065,14 @@
   (def dx<-direction #(1 0 -1 0))
   (def dy<-direction #(0 1 0 -1))
   (def coordinate<-position (hash))
-)
+  (void))
 
 ;; DAY 14 https://adventofcode.com/2018/day/14
 
-;;(def (day14)
-(begin
+(def (day14)
   (def input 894501)
   (def (list<-integer n)
-    (!> n number->string string->list (cut map char-digit <>)))
+    (!> n number->string string->list (cut map char-ascii-digit <>)))
   (def (play stop)
     (def start [3 7])
     (def board (circle<-list start))
@@ -1153,7 +1119,7 @@
   (def (answer1) (digits-after input)) ;; "2157138126"
   (def (steps-before output)
     (def l (string-length output))
-    (def o (map char-digit (string->list output)))
+    (def o (map char-ascii-digit (string->list output)))
     (def ll 0)
     (let/cc return
       (play (λ (board len)
