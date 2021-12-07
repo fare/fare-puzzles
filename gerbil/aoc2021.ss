@@ -5,13 +5,33 @@
   :std/assert :std/format :std/iter :std/misc/list :std/misc/ports :std/misc/repr :std/misc/string
   :std/sort :std/srfi/1 :std/srfi/43 :std/sugar
   :clan/assert :clan/base :clan/basic-parsers :clan/basic-printers
-  :clan/debug :clan/number
+  :clan/debug :clan/number :clan/matrix
   :clan/source)
 
 ;;; General purpose utilities
 
 (def (day-input-file n) (path-expand (format "data/aoc2021-~d.input" n) (this-source-directory)))
 (def bytes-ref-set! bytes-set!)
+(def vector-ref-set! vector-set!)
+(def (vector-total v) (for/fold (s 0) (x v) (+ s x)))
+(def (invert-vector/count v (i #f))
+  (when (list? v) (set! v (list->vector v)))
+  (assert! (vector-every exact-integer? v))
+  (def vmin (for/fold (m +inf.0) (x v) (min m x)))
+  (assert! (<= 0 vmin))
+  (def vmax (for/fold (m -1) (x v) (max m x)))
+  (assert! (>= 1000000 vmax))
+  (def l (1+ vmax))
+  (if i
+    (assert! (<= l (vector-length i)) "foo" v l i)
+    (set! i (make-vector l 0)))
+  (for (x v) (increment! (vector-ref i x)))
+  i)
+(def (invert-vector/sparse-count v)
+  (def h (hash))
+  (for (i v) (increment! (hash-ref h i 0)))
+  (sort (hash->list h)))
+
 
 ;;; DAY 1 https://adventofcode.com/2021/day/1
 (def (count-increases l)
@@ -19,7 +39,6 @@
     (match l
       ([curr more ...] (loop (if (and prev (< prev curr)) (1+ i) i) curr more))
       ([] i))))
-
 (def (3-sums l)
   (match l
     ([a b ll ...]
@@ -60,7 +79,6 @@
        (['forward n] [(+ horizontal n) (+ depth (* n aim)) aim])
        (['up n] [horizontal depth (- aim n)])
        (['down n] [horizontal depth (+ aim n)])))))
-
 (def (day2 (input (parse-file-lines expect-command (day-input-file 2))))
   (def (answer1)
     (match (foldl update-position-1 [0 0] input)
@@ -77,8 +95,6 @@
                '(150 900))
 
 ;;; DAY 3 https://adventofcode.com/2021/day/3
-(def vector-ref-set! vector-set!)
-
 (def (day3 (input (read-file-lines (day-input-file 3))))
   (assert! (pair? input))
   (def bitlen (string-length (car input)))
@@ -131,7 +147,7 @@
 (assert-equal! (day3 '("00100" "11110" "10110" "10111" "10101" "01111" "00111" "11100" "10000" "11001" "00010" "01010"))
                '(198 230))
 
-;; Day 4
+;;; DAY 4 https://adventofcode.com/2021/day/4
 (def (validate-5-list l) (assert! (length=n? l 5)) l)
 (def expect-comma-separated-naturals-line
   (expect-separated expect-natural (expect-char #\,) expect-eol))
@@ -179,7 +195,6 @@
       (increment! (bytes-ref bingo-card-score 0)))))
 (def (bingo-winner? bingo-card-score)
   (plus? (bytes-ref bingo-card-score 0)))
-
 (def (day4 (input (read-file-string (day-input-file 4))))
   (def (expect-day4-input port)
     (def order (expect-comma-separated-naturals-line port))
@@ -240,3 +255,118 @@
 18  8 23 26 20
 22 11 13  6  5
  2  0 12  3  7") '(4512 1924))
+
+;;; DAY 5 https://adventofcode.com/2021/day/5
+(def (day5 (input (read-file-string (day-input-file 5))))
+  (def expect-day5-input
+    (expect-repeated (expect-list
+                      (expect-begin0 expect-natural (expect-char #\,))
+                      (expect-begin0 expect-natural (expect-literal-string " -> "))
+                      (expect-begin0 expect-natural (expect-char #\,))
+                      (expect-begin0 expect-natural expect-eol))
+                     expect-eof))
+  (def lines (parse-string input expect-day5-input))
+  (def xl (1+ (reduce max 0 (map (match <> ([x0 _ x1 _] (max x0 x1))) lines))))
+  (def yl (1+ (reduce max 0 (map (match <> ([x0 _ x1 _] (max x0 x1))) lines))))
+  (def (ixy x y) (+ x (* xl y)))
+  (def (answer diagonal?)
+    (def M (make-vector (* xl yl) 0))
+    (def count 0)
+    (def (mark x y)
+      (def i (ixy x y))
+      (def c (vector-ref M i))
+      (vector-set! M i (1+ c))
+      (when (= c 1) (increment! count)))
+    (for ((l lines))
+      (match l
+        ([x0 y0 x1 y1]
+         (cond
+          ((= y0 y1) ;; horizontal
+           (for ((x (in-range (min x0 x1) (1+ (max x0 x1))))) (mark x y0)))
+          ((= x0 x1) ;; vertical
+           (for ((y (in-range (min y0 y1) (1+ (max y0 y1))))) (mark x0 y)))
+          ((and diagonal? (= (abs (- x0 x1)) (abs (- y0 y1)))) ;; diagonal
+           (let* ((n (1+ (abs (- x0 x1))))
+                  (xstep (sign<-real (- x1 x0)))
+                  (ystep (sign<-real (- y1 y0))))
+             ;;(DBG diagonal: x0 y0 x1 y1 n xstep ystep)
+             (for (i (in-range n)) (mark (+ x0 (* i xstep)) (+ y0 (* i ystep))))))))))
+    count)
+  (def (answer1) (answer #f))
+  (def (answer2) (answer #t))
+  [(answer1) (answer2)])
+(assert-equal! (day5 "0,9 -> 5,9
+8,0 -> 0,8
+9,4 -> 3,4
+2,2 -> 2,1
+7,0 -> 7,4
+6,4 -> 2,0
+0,9 -> 2,9
+3,4 -> 1,4
+0,0 -> 8,8
+5,5 -> 8,2") '(5 12))
+
+;;; DAY 6 https://adventofcode.com/2021/day/6
+(def (day6 (input (read-file-string (day-input-file 6))))
+  (def fish-ages (parse-string input expect-comma-separated-naturals-line))
+  (def age-vector (invert-vector/count fish-ages (make-vector 9 0))) ;; a 1x9 matrix
+  (def I 9)
+  (def day-matrix ;; a 9x9 matrix
+    #(0 0 0 0 0 0 1 0 1
+      1 0 0 0 0 0 0 0 0
+      0 1 0 0 0 0 0 0 0
+      0 0 1 0 0 0 0 0 0
+      0 0 0 1 0 0 0 0 0
+      0 0 0 0 1 0 0 0 0
+      0 0 0 0 0 1 0 0 0
+      0 0 0 0 0 0 1 0 0
+      0 0 0 0 0 0 0 1 0))
+  (def (mexpt M n) (matrix-expt 9 M n))
+  (def (n-day ages n)
+    (matrix* 9 9 1 (matrix-expt 9 day-matrix n) ages))
+  (def (n-day-total n) (vector-total (n-day age-vector n)))
+  ;;^ same as (Mref 1 1 (matrix* 1 9 1 #(1 1 1 1 1 1 1 1 1) ages) 0 0)
+  ;;(def (N n) (n-day age-vector n)) (DBG d6: (N 0) (N 1) (N 2) (N 3) (N 18))
+  (def (answer1) (n-day-total 80))
+  (def (answer2) (n-day-total 256))
+  [(answer1) (answer2)])
+(assert-equal! (day6 "3,4,3,1,2") '(5934 26984457539))
+
+;;; DAY 7 https://adventofcode.com/2021/day/7
+(def (day7 (input (read-file-string (day-input-file 7))))
+  (def horizontal-positions (parse-string input expect-comma-separated-naturals-line))
+  (def position-counts (invert-vector/count horizontal-positions)) ;; a 1x9 matrix
+  (def l (vector-length position-counts))
+  (def n (vector-total position-counts))
+  (DBG d7: l n position-counts) ;; TODO: speed up by using sparse but sorted representation instead
+  (def (answer1)
+    (def best-i 0)
+    (def best-score (for/fold (s 0) ((c position-counts) (i (in-naturals)))
+                      (+ s (* c i))))
+    (def score best-score)
+    (def population-before 0)
+    (def population-after n)
+    ;;(DBG d7: l n position-counts score)
+    (for ((i (in-range 1 l)) (c position-counts))
+      (increment! population-before c)
+      (decrement! population-after c)
+      (increment! score (- population-before population-after))
+      ;;(DBG d7.2: l n i c score population-before population-after)
+      (when (< score best-score)
+        (set! best-score score)
+        (set! best-i i)))
+     best-score)
+  (def (answer2)
+    (def best-i -inf.0)
+    (def best-score +inf.0)
+    (for ((i (in-range l)))
+      (def score 0)
+      (for ((j (in-range l)) (c position-counts))
+        (def d (abs (- i j)))
+        (increment! score (* c d (1+ d) 1/2)))
+      (when (< score best-score)
+        (set! best-score score)
+        (set! best-i i)))
+     best-score)
+  [(answer1) (answer2)])
+(assert-equal! (day7 "16,1,2,0,4,2,7,1,2,14") '(37 168))
