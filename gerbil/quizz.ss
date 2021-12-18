@@ -55,22 +55,27 @@
   (match <>
     ([ch n qs a b c d al]
      (def aa (vector a b c d))
-     (def si (vector-shuffle #(0 1 2 3)))
+     (def si
+       (if (string-contains d "the above") ;; keep variants of "all of the above" at the end
+         (list->vector [(shuffle '(0 1 2))... 3])
+         (vector-shuffle #(0 1 2 3))))
      (printf "~d.~d. ~a\n" ch n qs)
      (vector-for-each (lambda (i j) (displayln (letter<-index i) ". " (vector-ref aa j))) si)
      (def choice (ignore-errors (parse-string (string-upcase (read-line)) (expect-one-of index<-letter))))
      (def solution (letter<-index (vector-index (lambda (x) (eqv? x (index<-letter al))) si)))
      (if (eqv? choice solution)
        (displayln "CORRECT!")
-       (displayln "WRONG! The correct answer was: " solution
-                  " (" al " in the manual)"))
+       (displayln "WRONG! The correct answer was: " solution)) ;; "(" al " in the manual)"))
      (newline))))
 
-(define-entry-point (quizz shuffle?: (shuffle? #f))
+(define-entry-point (quizz shuffle?: (shuffle? #f) chapters: (chapters "234"))
   (help: "Quizz"
-   getopt: (make-options [(flag 'shuffle? "--shuffle" help: "shuffle the order of the questions")]))
+   getopt: (make-options
+            [(flag 'shuffle? "--shuffle" help: "shuffle the order of the questions")
+             (option 'chapters "--chapters" default: "234" help: "chapters to quizz about")]))
   (randomize!)
-  (def questions (parse-questions))
+  (def good-chapter? (match <> ([ch . _] (string-index chapters (integer->char (+ ch 48))))))
+  (def questions (filter good-chapter? (parse-questions)))
   (when shuffle?
     (set! questions (shuffle questions)))
   (for (q questions)
