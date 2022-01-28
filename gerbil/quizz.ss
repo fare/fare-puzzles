@@ -72,7 +72,8 @@
   (help: "Quizz"
    getopt: (make-options
             [(flag 'shuffle? "--shuffle" help: "shuffle the order of the questions")
-             (option 'chapters "--chapter" "--chapters" default: "234" help: "chapters to quizz about")]))
+             (option 'chapters "--chapter" "--chapters" default: "234" help: "chapters to quizz about")]
+            [] [options/help]))
   (randomize!)
   (def good-chapter? (match <> ([ch . _] (string-index chapters (integer->char (+ ch 48))))))
   (def questions (filter good-chapter? (parse-questions)))
