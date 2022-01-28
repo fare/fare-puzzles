@@ -127,3 +127,16 @@
 
 ;; Advice: always play "tares" first. For #222, found the answer in 4 steps:
 ;; (play "tares" "YBBBB" "colin" "BGBBY" "fount" "BGGGG") => ("mount" 0)
+
+(def (play-against wordle)
+  (let loop ((previous []) (candidate "tares") (n 1))
+    (def answer (wordle-answer candidate wordle))
+    ;;(DBG play-against: candidate answer)
+    (if (equal? answer "GGGGG")
+      n
+      (let (moves [previous ... candidate answer])
+        (loop moves (first (apply play moves)) (1+ n))))))
+
+(def (all-plays)
+  (for (w (shuffle-list wordles))
+    (writeln [w (play-against w)])))
