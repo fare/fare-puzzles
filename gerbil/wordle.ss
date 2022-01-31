@@ -20,24 +20,6 @@
 
 (def ascii-a (char->integer #\a))
 
-(def letter? char-ascii-lowercase?)
-
-(def (valid-word? word known-letters present-letters absent-letters)
-  (let/cc return
-    (for (i (in-range 5))
-      (def wl (string-ref word i))
-      (def kl (string-ref known-letters i))
-      (when (or (and (letter? kl) (not (eqv? kl wl)))
-                (string-index absent-letters wl))
-        (return #f)))
-    (for (pl present-letters)
-      (unless (string-index word pl)
-        (return #f)))
-    #t))
-
-(def (valid-words known-letters present-letters absent-letters)
-  (filter (cut valid-word? <> known-letters present-letters absent-letters) wordles))
-
 (def (index<-letter l)
   (def i (- (char->integer l) ascii-a))
   (assert! (<= 0 i 25))
@@ -57,11 +39,6 @@
   (if (zero? sub) 0
       (let (p (/ sub total))
         (- (* p (log p 2))))))
-
-;; Shannon entropy contained in one case and the opposite case
-(def (information-content sub (total 1))
-  (+ (partial-information-content sub total)
-     (partial-information-content (- total sub) total)))
 
 ;;; Compute directly word entropy: for each word,
 ;;; count the probabilities of all the possible colored results (Black Yellow Green),
@@ -85,21 +62,28 @@
 (def n-word 8636)
 (def n-answers 238)
 (def all-wordles (iota n-word))
+
+;; Assign a natural number as word index to each word, starting from 0.
 (def word<-wi% (list->vector wordles))
 (def wi<-word# (invert-hash<-vector word<-wi%))
-(def (wi<-word w) (if (integer? w) w (hash-ref wi<-word# w)))
+(def (wi<-word w) (hash-ref wi<-word# w))
 (def (word<-wi wi) (vector-ref word<-wi% wi))
+
+;; Assign a natural number as answer index to each answer, starting from 0.
+;; Note that 0 will be for "GGGGG", the entry obtain by the the first word matching itself.
 (def answer<-ai% (make-vector n-answers (void)))
 (def ai<-answer# (make-hash-table))
+(def (ai<-answer a) (hash-ref ai<-answer# a))
+(def (answer<-ai ai) (vector-ref answer<-ai% ai))
+
+;; Table from candidate index and solution index to answer index
 (def ai<-candidate-wordle%% (void))
 (def (aicw-index candidate wordle) (+ (* candidate n-word) wordle))
 (def (ai<-candidate-wordle candidate wordle)
   (u8vector-ref ai<-candidate-wordle%% (aicw-index candidate wordle)))
 (def (ai<-candidate-wordle-set! candidate wordle val)
   (u8vector-set! ai<-candidate-wordle%% (aicw-index candidate wordle) val))
-(def (ai<-answer a)
-  (if (integer? a) a (hash-ref ai<-answer# a)))
-(def (answer<-ai ai) (vector-ref answer<-ai% ai))
+
 
 (def (precompute-wordle) ;; 53 seconds on my machine
   (assert! (= (vector-length word<-wi%) n-word))
@@ -154,7 +138,7 @@
     (increment! (vector-ref buckets answer)))
   (for/fold (sum 0) (n buckets) (+ sum (partial-information-content n total))))
 
-;; (Cons Real (List WI)) <- WI WI
+;; : (Cons Real (List WI)) <- WI WI
 (def (best-candidates candidates wordles)
   (def best '())
   (def score -inf.0)
@@ -171,9 +155,9 @@
 ;; Identify the best word given the constraints, with a heuristic considering
 ;; the information of each letter independently
 (def (score-first-choices)
-  (sort (map (lambda (candidate) [(answer<-ai candidate) (candidate-entropy candidate all-wordles)]) all-wordles)
+  (sort (map (lambda (candidate) [(word<-wi candidate) (candidate-entropy candidate all-wordles)]) all-wordles)
         (comparing-key test: > key: second)))
-;;==> in 86 seconds, I found that the best word is: "tares", entropy 6.22. Median word is "rodeo", entropy 4.65, average entropy 4.61, worst word "xylyl" entropy 2.16.
+;;==> in 3 seconds, I found that the best word is: "tares", entropy 6.22. Median word is "rodeo", entropy 4.65, average entropy 4.61, worst word "xylyl" entropy 2.16.
 
 (def (thin-out-wordles candidate answer wordles)
   (filter (lambda (w) (equal? (ai<-candidate-wordle candidate w) answer)) wordles))
@@ -183,37 +167,41 @@
      (or (find (cut member <> wordles) besties)
          (first besties)))))
 
-(def (play/i moves/i)
-  (let loop ((wordles all-wordles) (ms moves/i))
-    (match ms
-      ([] (best-candidate all-wordles wordles))
-      ([[candidate . answer] . more]
-       (loop (thin-out-wordles candidate answer wordles) more)))))
-
-(def (play . moves)
+(def (play wordles: (wordles wordles) . moves)
   (ensure-precomputed-wordle)
-  (word<-wi (play/i (let loop ((ms moves))
-                      (match ms ([] [])
-                             ([candidate answer . more]
-                              (cons (cons (wi<-word candidate) (ai<-answer answer))
-                                    (loop more))))))))
+  (let loop ((wordles (map wi<-word wordles)) (ms moves))
+    (match ms
+      ([candidate answer . more]
+       (loop (thin-out-wordles (wi<-word candidate) (ai<-answer answer) wordles) more))
+      ([]
+       (let (c (best-candidate all-wordles wordles))
+         (values (map word<-wi wordles) (length wordles) c (word<-wi c)))))))
 
 ;; Advice: always play "tares" first. For #222, found the answer in 4 steps:
-;; (play "tares" "YBBBB" "colin" "BGBBY" "fount" "BGGGG") => ("mount" 0)
-;; (best-candidate all-wordles all-wordles) ;=> (6.223902376629625 7422) in 3 seconds
+;; (play "tares" "YBBBB" "colin" "BGBBY" "fount" "BGGGG") => "mount"
+;; (best-candidate all-wordles all-wordles) ;=> 7422 in 3 seconds
 (def best-first-play (wi<-word "tares"))
-(def answer-found 0) ;; first entry is first word matching itself
+
+(defonce (first-play-buckets)
+  (ensure-precomputed-wordle)
+  (let (v (make-vector n-answers '()))
+    (for (w all-wordles)
+      (def a (ai<-candidate-wordle best-first-play w))
+      (push! w (vector-ref v a)))
+    v))
 
 (def (play-against wordle)
-  (let loop ((wordles all-wordles) (candidate best-first-play) (n 1))
-    (def answer (ai<-candidate-wordle candidate wordle))
-    ;;(DBG play-against: candidate answer)
-    (if (= answer answer-found)
-      n
-      (let (ws (thin-out-wordles candidate answer wordles))
-        (loop ws (best-candidate all-wordles ws) (1+ n))))))
+  (if (= wordle best-first-play)
+    1
+    (let loop ((wordles
+                (left-to-right vector-ref (first-play-buckets)
+                               (ai<-candidate-wordle best-first-play wordle)))
+               (n 2))
+      (def candidate (best-candidate all-wordles wordles))
+      (if (= wordle candidate)
+        n
+        (loop (thin-out-wordles candidate (ai<-candidate-wordle candidate wordle) wordles) (1+ n))))))
 
 (def (all-plays)
-  (ensure-precomputed-wordle)
   (for (w (shuffle-list all-wordles))
     (writeln [(word<-wi w) (play-against w)])))
