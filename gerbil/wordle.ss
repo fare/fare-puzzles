@@ -2,21 +2,30 @@
   :gerbil/gambit/bytes
   :std/assert :std/iter
   :std/misc/hash :std/misc/list :std/misc/list-builder :std/misc/number :std/misc/ports :std/misc/string
-  :std/sort :std/srfi/1 :std/srfi/13 :std/srfi/43 :std/sugar
-  :clan/base :clan/basic-parsers :clan/config :clan/number
-  :clan/path :clan/ports :clan/random :clan/source
+  :std/sort :std/srfi/1 :std/srfi/13 :std/srfi/19 :std/srfi/43 :std/sugar
+  :clan/assert :clan/base :clan/basic-parsers :clan/config :clan/number
+  :clan/path :clan/ports :clan/random :clan/source :clan/timestamp
   :clan/debug)
 
 (export #t)
 
 (def vector-ref-set! vector-set!)
 
+;; NB: This is the list of words from the file. Started on 2021-06-19 (local time).
+;; List of 2310 words, until 2027-10-15.
 (def wordles
-  (!> "../data/enable1.txt"
+  (!> "../data/wordles.txt"
       (cut subpath (this-source-directory) <>)
       read-file-lines
       (cut map string-trim-eol <>)
-      (cut filter (lambda (x) (= (string-length x) 5)) <>)))
+      #;(cut filter (lambda (x) (= (string-length x) 5)) <>))) ;; starts with the solutions, up to aahed
+
+(def (first-wordle-date)
+  (make-date 0 0 0 0 19 6 2021 0)) ;; TODO: should we adjust the final TZ field somehow?
+
+(def (current-wordle)
+  (list-ref wordles
+            (quotient (- (current-unix-timestamp) (unix-timestamp<-date (first-wordle-date))) one-day)))
 
 (def ascii-a (char->integer #\a))
 
@@ -59,8 +68,8 @@
   ;;(DBG wordle-answer: candidate wordle a)
   a)
 
-(def n-word 8636)
-(def n-answers 238)
+(def n-word 12947)
+(def n-answers 238) ;; 3**5-5 (each result letter can be B, G or Y, but if there are 4 G's, the last one can't be Y)
 (def all-wordles (iota n-word))
 
 ;; Assign a natural number as word index to each word, starting from 0.
@@ -85,8 +94,8 @@
   (u8vector-set! ai<-candidate-wordle%% (aicw-index candidate wordle) val))
 
 
-(def (precompute-wordle) ;; 53 seconds on my machine
-  (assert! (= (vector-length word<-wi%) n-word))
+(def (precompute-wordle) ;; 110 seconds on my machine
+  (assert-equal! (vector-length word<-wi%) n-word)
   (def na 0)
   (set! ai<-candidate-wordle%% (make-u8vector (* n-word n-word) 255))
   (set! answer<-ai%
@@ -99,11 +108,10 @@
            (ai<-candidate-wordle-set!
             candidate wordle
             (intern-answer (wordle-answer (word<-wi candidate) (word<-wi wordle)))))))))
-  (assert! (= na n-answers)))
-
+  (assert-equal! na n-answers))
 (def wordle-cache (xdg-cache-home "fare-puzzles" "wordle.dat"))
 
-(def (save-precomputed-wordle)
+(def (save-precomputed-wordle) ;; 0.57s
   (create-directory* (path-directory wordle-cache))
   (call-with-output-file wordle-cache
     (lambda (p)
@@ -111,7 +119,7 @@
         (write-bytes (string->bytes (answer<-ai ai)) p))
       (write-bytes ai<-candidate-wordle%% p))))
 
-(def (load-precomputed-wordle)
+(def (load-precomputed-wordle) ; 0.29s
   (call-with-input-file wordle-cache
     (lambda (p)
       (set! answer<-ai% (make-vector n-word (void)))
@@ -157,7 +165,7 @@
 (def (score-first-choices)
   (sort (map (lambda (candidate) [(word<-wi candidate) (candidate-entropy candidate all-wordles)]) all-wordles)
         (comparing-key test: > key: second)))
-;;==> in 3 seconds, I found that the best word is: "tares", entropy 6.22. Median word is "rodeo", entropy 4.65, average entropy 4.61, worst word "xylyl" entropy 2.16.
+;;==> in 5.25 seconds, I found that the best word is: "tares", entropy 6.19. Median word is "sibyl", entropy 4.63, average entropy 4.59, worst word "qajaq" entropy 2.07.
 
 (def (thin-out-wordles candidate answer wordles)
   (filter (lambda (w) (equal? (ai<-candidate-wordle candidate w) answer)) wordles))
@@ -183,8 +191,8 @@
 (def best-first-play (wi<-word "tares"))
 
 (defonce (first-play-buckets)
-  (ensure-precomputed-wordle)
   (let (v (make-vector n-answers '()))
+    (ensure-precomputed-wordle)
     (for (w all-wordles)
       (def a (ai<-candidate-wordle best-first-play w))
       (push! w (vector-ref v a)))
@@ -202,6 +210,32 @@
         n
         (loop (thin-out-wordles candidate (ai<-candidate-wordle candidate wordle) wordles) (1+ n))))))
 
+;; Explore the decision tree for all the relevant words in parallel.
+;; Takes 504s (8min24s) on my machine.
+;; Out of 12947 words, there are 23 7-step words: ferry folly casas coved doved fades fakes faxes fells finks gives hohed jacks jests jills safes sexes veges vexes vills vines wexes zills
 (def (all-plays)
-  (for (w (shuffle-list all-wordles))
-    (writeln [(word<-wi w) (play-against w)])))
+  (def solutions (make-vector n-word #f))
+  (let process-bucket ((rpath []) (wordles all-wordles))
+    #;(let* ((l (length wordles)) (w (if (<= l 10) wordles (take wordles 10))))
+      (DBG process-bucket: rpath l w))
+    (let (candidate (best-candidate all-wordles wordles))
+      (let (bs (make-vector n-answers '()))
+        (for (w wordles)
+          (def a (ai<-candidate-wordle candidate w))
+          (push! w (vector-ref bs a)))
+        (for ((b bs) (a (in-naturals)))
+          (def rp [[candidate . a] . rpath])
+          (cond
+           ((null? b) (void))
+           ((null? (cdr b)) (set! (vector-ref solutions (car b))
+                              (if (zero? a) [(length rp) . rp]
+                                  [(1+ (length rp)) [(cdr b) . 0] . rp])))
+           (else (process-bucket rp b)))))))
+  solutions)
+;; (def ap (time (all-plays)))
+;; (let (c (make-vector 8 0)) (for ((a ap) (i (in-naturals))) (increment! (vector-ref c (car a)))) c)
+;;=> #(0 1 58 2444 7248 2808 365 23)
+;;
+;; GOAL: change the decision tree to help with the worst case as opposed to the average case
+;; Pick a better candidate by looking deeper down the tree?
+;; Rotate some branches to rebalance the tree?
