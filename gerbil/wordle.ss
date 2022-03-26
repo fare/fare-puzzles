@@ -12,7 +12,7 @@
 (def vector-ref-set! vector-set!)
 
 ;; NB: This is the list of words from the file. Started on 2021-06-19 (local time).
-;; List of 2310 words, until 2027-10-15.
+;; List of 2309 words, until 2027-10-15.
 (def wordles
   (!> "../data/wordles.txt"
       (cut subpath (this-source-directory) <>)
@@ -23,9 +23,15 @@
 (def (first-wordle-date)
   (make-date 0 0 0 0 19 6 2021 0)) ;; TODO: should we adjust the final TZ field somehow?
 
+(def n-solutions 2309) ;; number of wordle solutions
+(defonce (solutions) (take wordles n-solutions))
+
 (def (current-wordle)
   (list-ref wordles
-            (quotient (- (current-unix-timestamp) (unix-timestamp<-date (first-wordle-date))) one-day)))
+            (quotient (quotient (- (current-unix-timestamp)
+                                   (unix-timestamp<-date (first-wordle-date)))
+                                one-day)
+                      n-solutions)))
 
 (def ascii-a (char->integer #\a))
 
@@ -69,8 +75,9 @@
   a)
 
 (def n-word 12947)
-(def n-answers 238) ;; 3**5-5 (each result letter can be B, G or Y, but if there are 4 G's, the last one can't be Y)
+(def n-answers 238) ;; 3**5-5 < 256 (each result letter can be B, G or Y, but if there are 4 G's, the last one can't be Y)
 (def all-wordles (iota n-word))
+(def all-solutions (iota n-solutions))
 
 ;; Assign a natural number as word index to each word, starting from 0.
 (def word<-wi% (list->vector wordles))
