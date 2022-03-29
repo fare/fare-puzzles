@@ -7,6 +7,8 @@
   :clan/path :clan/ports :clan/random :clan/source :clan/timestamp
   :clan/debug)
 
+;; See also: https://github.com/norvig/pytudes/blob/main/ipynb/Wordle.ipynb
+
 (export #t)
 
 (def vector-ref-set! vector-set!)
@@ -26,12 +28,12 @@
 (def n-solutions 2309) ;; number of wordle solutions
 (defonce (solutions) (take wordles n-solutions))
 
-(def (current-wordle)
-  (list-ref wordles
-            (quotient (quotient (- (current-unix-timestamp)
-                                   (unix-timestamp<-date (first-wordle-date)))
-                                one-day)
-                      n-solutions)))
+(def (wordle-day)
+  (quotient (- (current-unix-timestamp) (unix-timestamp<-date (first-wordle-date)))
+            one-day))
+
+(def (daily-wordle (day (wordle-day)))
+  (list-ref wordles (modulo day n-solutions)))
 
 (def ascii-a (char->integer #\a))
 
