@@ -4,7 +4,7 @@
 (export #t)
 
 (import
-  :std/format :std/getopt :std/iter :std/misc/shuffle
+  :std/format :std/getopt :std/iter :std/misc/number :std/misc/shuffle
   :std/srfi/1 :std/srfi/13 :std/srfi/43
   :clan/assert :clan/base :clan/basic-parsers :clan/cli :clan/debug
   :clan/multicall :clan/path :clan/random :clan/source
@@ -51,9 +51,12 @@
   (def data (subpath (this-source-directory) "data/questions.text"))
   (parse-file data expect-questions))
 
-(def ask-question
+(defalias vector-ref-set! vector-set!)
+
+(def (ask-question counters)
   (match <>
     ([ch n qs a b c d al]
+     (increment! (vector-ref counters 0))
      (def aa (vector a b c d))
      (def si
        (if (string-contains d "the above") ;; keep variants of "all of the above" at the end
@@ -65,8 +68,10 @@
      (def solution (letter<-index (vector-index (lambda (x) (eqv? x (index<-letter al))) si)))
      (if (eqv? choice solution)
        (displayln "CORRECT!")
-       (displayln "WRONG! The correct answer was: " solution)) ;; "(" al " in the manual)"))
-     (newline))))
+       (begin
+         (increment! (vector-ref counters 1))
+         (displayln "WRONG! The correct answer was: " solution))) ;; "(" al " in the manual)"))
+     (printf "[~d errors out of ~d questions]\n\n" (vector-ref counters 1) (vector-ref counters 0)))))
 
 (define-entry-point (quizz shuffle?: (shuffle? #f) chapters: (chapters "234"))
   (help: "Quizz"
@@ -77,8 +82,9 @@
   (randomize!)
   (def good-chapter? (match <> ([ch . _] (string-index chapters (integer->char (+ ch 48))))))
   (def questions (filter good-chapter? (parse-questions)))
+  (def counters (vector 0 0))
   (when shuffle?
     (set! questions (shuffle questions)))
-  (for-each ask-question questions))
+  (for-each (ask-question counters) questions))
 
 (def (main . args) (apply call-entry-point "quizz" args))
