@@ -76,7 +76,7 @@
   ;;(DBG wordle-answer: candidate wordle a)
   a)
 
-(def n-word 12947)
+(def n-word 14855)
 (def n-answers 238) ;; 3**5-5 < 256 (each result letter can be B, G or Y, but if there are 4 G's, the last one can't be Y)
 (def all-wordles (iota n-word))
 (def all-solutions (iota n-solutions))
@@ -103,7 +103,7 @@
   (u8vector-set! ai<-candidate-wordle%% (aicw-index candidate wordle) val))
 
 
-(def (precompute-wordle) ;; 110 seconds on my machine
+(def (compute-wordle-cache) ;; 110 seconds on my machine
   (assert-equal! (vector-length word<-wi%) n-word)
   (def na 0)
   (set! ai<-candidate-wordle%% (make-u8vector (* n-word n-word) 255))
@@ -118,18 +118,18 @@
             candidate wordle
             (intern-answer (wordle-answer (word<-wi candidate) (word<-wi wordle)))))))))
   (assert-equal! na n-answers))
-(def wordle-cache (xdg-cache-home "fare-puzzles" "wordle.dat"))
+(def (wordle-cache) (xdg-cache-home "fare-puzzles" "wordle.dat"))
 
-(def (save-precomputed-wordle) ;; 0.57s
-  (create-directory* (path-directory wordle-cache))
-  (call-with-output-file wordle-cache
+(def (save-wordle-cache) ;; 0.57s
+  (create-directory* (path-directory (wordle-cache)))
+  (call-with-output-file (wordle-cache)
     (lambda (p)
       (for (ai (in-range n-answers))
         (write-bytes (string->bytes (answer<-ai ai)) p))
       (write-bytes ai<-candidate-wordle%% p))))
 
-(def (load-precomputed-wordle) ; 0.29s
-  (call-with-input-file wordle-cache
+(def (load-wordle-cache) ; 0.29s
+  (call-with-input-file (wordle-cache)
     (lambda (p)
       (set! answer<-ai% (make-vector n-word (void)))
       (def buf (make-bytes 5 0))
@@ -140,11 +140,11 @@
       (set! ai<-candidate-wordle%% (make-u8vector (* n-word n-word) 255))
       (read-bytes ai<-candidate-wordle%% p))))
 
-(def (ensure-precomputed-wordle)
+(def (ensure-wordle-cache)
   (cond
    ((u8vector? ai<-candidate-wordle%%) (void))
-   ((file-exists? wordle-cache) (load-precomputed-wordle))
-   (else (precompute-wordle) (save-precomputed-wordle))))
+   ((file-exists? (wordle-cache)) (load-wordle-cache))
+   (else (compute-wordle-cache) (save-wordle-cache))))
 
 ;; Given a list of possible wordles, what is the entropy from the candidate?
 (def (candidate-entropy candidate wordles)
@@ -185,7 +185,7 @@
          (first besties)))))
 
 (def (play wordles: (wordles wordles) . moves)
-  (ensure-precomputed-wordle)
+  (ensure-wordle-cache)
   (let loop ((wordles (map wi<-word wordles)) (ms moves))
     (match ms
       ([candidate answer . more]
@@ -201,13 +201,13 @@
 
 (defonce (first-play-buckets)
   (let (v (make-vector n-answers '()))
-    (ensure-precomputed-wordle)
+    (ensure-wordle-cache)
     (for (w all-wordles)
       (def a (ai<-candidate-wordle best-first-play w))
       (push! w (vector-ref v a)))
     v))
 
-(def (play-against wordle)
+(def (play-against/index wordle)
   (if (= wordle best-first-play)
     1
     (let loop ((wordles
@@ -215,6 +215,29 @@
                                (ai<-candidate-wordle best-first-play wordle)))
                (n 2))
       (def candidate (best-candidate all-wordles wordles))
+      (if (= wordle candidate)
+        n
+        (loop (thin-out-wordles candidate (ai<-candidate-wordle candidate wordle) wordles) (1+ n))))))
+
+(def (show-attempt attempt candidate-index wordle wordles)
+  (def candidate (word<-wi candidate-index))
+  (def score (answer<-ai (ai<-candidate-wordle candidate-index wordle)))
+  (if (< (length wordles) 25)
+    (let ((wordles (map word<-wi wordles)))
+      (DBG try: attempt wordles candidate score))
+    (DBG try: attempt (length wordles) candidate score)))
+
+(def (play-against word)
+  (def wordle (wi<-word word))
+  (show-attempt 1 best-first-play wordle wordles)
+  (if (= wordle best-first-play)
+    1
+    (let loop ((wordles
+                (left-to-right vector-ref (first-play-buckets)
+                               (ai<-candidate-wordle best-first-play wordle)))
+               (n 2))
+      (def candidate (best-candidate all-wordles wordles))
+      (show-attempt n candidate wordle wordles)
       (if (= wordle candidate)
         n
         (loop (thin-out-wordles candidate (ai<-candidate-wordle candidate wordle) wordles) (1+ n))))))
