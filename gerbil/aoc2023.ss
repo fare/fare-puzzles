@@ -37,6 +37,9 @@
 
 ;;; DAY 1 https://adventofcode.com/2023/day/1
 
+;; First approach: first filter the string for digits, then extract first and last
+;; NB: I first tried to do a rewrite with regexp or a loop,
+;; but that yielded the wrong result because of overlaps
 (def (filter-digits line)
   (string-filter char-ascii-digit line))
 (def (string-first s)
@@ -61,25 +64,55 @@
             (loop (1+ i))))
          (else
           (loop (1+ i))))))))
-
 (def (calibration-value frobbed-line)
   (+ (* 10 (char-value (string-first frobbed-line)))
      (char-value (string-last frobbed-line))))
-
 (def (day1.0 frob input) (+/list (map (compose calibration-value frob) input)))
 (def (day1.1 input) (day1.0 filter-digits input))
 (def (day1.2 input) (day1.0 filter-digits* input))
 
-(check (day1.1 '("1abc2" "pqr3stu8vwx" "a1b2c3d4e5f" "treb7uchet"))
-       => 142)
-(check (day1.2 '("two1nine"
-                  "eightwothree"
-                  "abcone2threexyz"
-                  "xtwone3four"
-                  "4nineeightseven2"
-                  "zoneight234"
-                  "7pqrstsixteen"))
-       => 281)
+;; Better approach: instead of filter, just search a digit (or digit-name) from beginning and from end.
+(def (first-digit string)
+  (char-ascii-digit (string-ref string (string-index string char-ascii-digit))))
+(def (last-digit string)
+  (char-ascii-digit (string-ref string (string-index-right string char-ascii-digit))))
+(def (first-digit* s)
+  (def l (string-length s))
+  (let loop ((i 0))
+    (cond
+     ((= i l) 0)
+     ((char-ascii-digit (string-ref s i)))
+     ((vector-index (lambda (name) (string-prefix? name s 0 (string-length name) i l)) digit-names))
+     (else (loop (1+ i))))))
+(def (last-digit* s)
+  (let loop ((i (string-length s)))
+    (cond
+     ((zero? i) 0)
+     ((char-ascii-digit (string-ref s (1- i))))
+     ((vector-index (lambda (name) (string-suffix? name s 0 (string-length name) 0 i)) digit-names))
+     (else (loop (1- i))))))
+(def (calibration-value* first last line)
+  (+ (* 10 (first line)) (last line)))
+
+(def (day1.0* first last input) (+/list (map (cut calibration-value* first last <>) input)))
+(def (day1.1* input) (day1.0* first-digit last-digit input))
+(def (day1.2* input) (day1.0* first-digit* last-digit* input))
+
+(defrule (check-day1 x1 x2)
+  (begin
+    (check (x1 '("1abc2" "pqr3stu8vwx" "a1b2c3d4e5f" "treb7uchet")) => 142)
+    (check (x2 '("two1nine"
+                 "eightwothree"
+                 "abcone2threexyz"
+                 "xtwone3four"
+                 "4nineeightseven2"
+                 "zoneight234"
+                 "7pqrstsixteen")) => 281)))
+(check-day1 day1.1 day1.2)
+(check-day1 day1.1* day1.2*)
 
 (def (day1 (input (read-file-lines (day-input-file 1))))
-  [(day1.1 input) (day1.2 input)])
+  (check (day1.1 input) => (day1.1* input))
+  (check (day1.2 input) => (day1.2* input))
+  [(day1.1* input) (day1.2* input)])
+
