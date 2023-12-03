@@ -1,16 +1,15 @@
 ;; -*- Gerbil -*-
-;;;; Basic LL(1) parsers
-
-;; These basic LL(1) parsers work with an object satisfying the PeekableStringReader interface.
-;; Be sure to wrap your port in a (raw-port port) and cast your wrapped port or BufferedStringReader
-;; to a PeekableStringReader to avoid performance penalty in calling these methods.
-
-;; TODO: parsing combinators that produce generating functions for all the values of a parse
-;; from a generator (or stream?) of values?
-;; OR, combinators that use interface-passing to handle the specific
-
-;; TODO: move to std/text/ll1-parser or some such, when it's ready
-;; Don't forget ll1-parser-test.ss
+;;;; Basic LL(1) parser combinators
+;; With this module, you can use parser combinators to create LL(1) parsers
+;; working over a PeekableStringReader input. Build your parser then use one of
+;; ll1/reader ll1/string ll1/port ll1/file or ll1/file-lines to consume input.
+;;
+;; Beware that these parsers use only one character of look-ahead, and that
+;; if an alternative in a parse-or fails further than at the start,
+;; the next alternative will start from where the previous one failed,
+;; and not from the point at which the parse-or started.
+;; This may be a reason to prefer ll1-case over parse-or.
+;; Use a more advanced kind of parser this is not enough. See std/parser.
 
 (export #t)
 
@@ -59,12 +58,12 @@
   (ll1-or
    (ll1-begin terminator (ll1-pure '()))
    (ll1-bind element (lambda (e) (ll1-repeated (ll1-begin separator element) terminator [e])))))
-(def ((ll1-n-times n element) reader)
-  (for/collect ((_ (in-range n))) (element reader)))
 (def ((ll1* f . elements) reader)
   (apply f (map-in-order (cut <> reader) elements)))
 (def (ll1-list . elements)
   (apply ll1* list elements))
+(def ((ll1-n-times n element) reader)
+  (for/collect ((_ (in-range n))) (element reader)))
 
 ;;; Peeker procedure from user-friendly spec
 (def (peeker spec)
@@ -196,7 +195,7 @@
           (def c (reader.peek-char))
           (unless (p c)
             (raise-parse-error parse-n-chars "invalid character" c n spec i))
-          (string-set! s i c))
+          (string-set! s i (reader.read-char)))
         s))))
 
 (def (ll1-n-digits n (base 10))
@@ -230,7 +229,6 @@
 (def (ll1-to-eof parse) (ll1-begin0 parse ll1-eof))
 
 (def ll1-skip-space-to-eof (ll1-to-eof ll1-skip-space*))
-
 
 ;; Parse an entire PeekableReader
 (def (ll1/reader parser reader (description reader) (where 'll1/reader))

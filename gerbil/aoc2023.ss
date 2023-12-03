@@ -118,8 +118,9 @@
 
 ;;; DAY 2 https://adventofcode.com/2023/day/2
 
+;; Parser for games
 (def (ll1-color color)
-  (ll1-begin (ll1-string (as-string color)) (parse-pure color)))
+  (ll1-begin (ll1-string (as-string color)) (ll1-pure color)))
 (def ll1-color-drawing
   (ll1-bind ll1-uint
             (lambda (n)
@@ -139,7 +140,6 @@
    (ll1-begin (ll1-string "Game ") ll1-uint)
    (ll1-begin (ll1-string ": ")
               (ll1-separated ll1-drawing (ll1-string "; ") ll1-eolf?))))
-
 (def ll1-games (ll1-repeated (ll1-begin0 ll1-game ll1-eolf) ll1-eof))
 
 (def (possible-drawing? content drawing)
