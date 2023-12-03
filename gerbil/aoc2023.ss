@@ -6,6 +6,7 @@
   :std/assert
   :std/contract
   :std/debug/DBG
+  :std/error
   :std/format
   :std/iter
   :std/misc/bytes
@@ -108,10 +109,10 @@
     (check (x1 '("1abc2" "pqr3stu8vwx" "a1b2c3d4e5f" "treb7uchet")) => 142)
     (check (x2 '("two1nine" "eightwothree" "abcone2threexyz" "xtwone3four"
                  "4nineeightseven2" "zoneight234" "7pqrstsixteen")) => 281)))
-(check-day1 day1.1 day1.2)
-(check-day1 day1.1* day1.2*)
 
 (def (day1 (input (read-file-lines (day-input-file 1))))
+  (check-day1 day1.1 day1.2)
+  (check-day1 day1.1* day1.2*)
   (check (day1.1 input) => (day1.1* input))
   (check (day1.2 input) => (day1.2* input))
   [(day1.1* input) (day1.2* input)])
@@ -171,10 +172,95 @@ Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
 Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
 Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"))
 
-(check (day2.1 day2-example) => 8)
-(check (day2.2 day2-example) => 2286)
-
 (def (day2 (input (ll1/file ll1-games (day-input-file 2))))
-  [(day2.1 input) (day2.2 input)])
+  (check (day2.1 day2-example) => 8)
+  (check (day2.2 day2-example) => 2286)
+  (def r [(day2.1 input) (day2.2 input)])
+  (check r => [2505 70265])
+  r)
 
-(check (day2) => [2505 70265])
+;;; DAY 3 https://adventofcode.com/2023/day/3
+
+;; Parser for games
+
+(def day3-example
+"\
+467..114..
+...*......
+..35..633.
+......#...
+617*......
+.....+.58.
+..592.....
+......755.
+...$.*....
+.664.598..")
+
+(def (parse-day3 string)
+  (def rows (ll1/string ll1-lines string))
+  (def n-rows (length rows))
+  (check-argument-positive-integer n-rows)
+  (def n-cols (string-length (first rows)))
+  (check-argument-positive-integer n-cols)
+  (check-argument (andmap (lambda (row) (equal? (string-length row) n-cols)) rows)
+                  "equal length rows" string)
+  (vector n-cols n-rows (string-concatenate rows)))
+(def (i<-xy x y X Y) (+ x (* y X)))
+(def (d3get v x y)
+  (with ((vector X Y V) v)
+    (and (exact-integer? x) (< -1 x X) (exact-integer? y) (< -1 y Y)
+         (string-ref V (i<-xy x y X Y)))))
+(def (d3-for-each-number fun v)
+  (with ((vector X Y V) v)
+    (for ((y (in-range Y)))
+      (let loop ((xstart 0))
+        (when (< xstart X)
+          (if (char-ascii-digit (d3get v xstart y))
+            (let* ((xendy (string-index V (lambda (x) (not (char-ascii-digit x)))
+                                        (1+ (i<-xy xstart y X Y)) (i<-xy X y X Y)))
+                   (xend (if xendy (- xendy (i<-xy 0 y X Y)) X))
+                   (n (string->number (substring V (i<-xy xstart y X Y) (i<-xy xend y X Y)))))
+              (fun n xstart xend y)
+              (loop (1+ xend)))
+            (loop (1+ xstart))))))))
+(def (part-symbol? x)
+  (and (char? x) (not (or (eqv? x #\.) (char-ascii-digit x)))))
+(def (d3-for-each-adjacent-symbol fun v xstart xend y)
+  (with ((vector X Y V) v)
+    (def (c gx gy)
+      (let (g (d3get v gx gy))
+        (when (part-symbol? g)
+          (fun g gx gy))))
+    (c (1- xstart) y)
+    (c xend y)
+    (for ((i (in-range (1- xstart) (1+ xend))))
+      (c i (1- y))
+      (c i (1+ y)))))
+(def (has-adjacent-symbol? v xstart xend y)
+  (let/cc return
+    (d3-for-each-adjacent-symbol (lambda _ (return #t)) v xstart xend y)
+    #f))
+(def (day3.1 input)
+  (def v (parse-day3 input))
+  (def sum 0)
+  (def (process-num n xstart xend y)
+    (when (has-adjacent-symbol? v xstart xend y)
+      (increment! sum n)))
+  (d3-for-each-number process-num v)
+  sum)
+(def (day3.2 input)
+  (def v (parse-day3 input))
+  (def stars (hash))
+  (def (process-num n xstart xend y)
+    (def (process-symbol g gx gy)
+      (when (eqv? g #\*)
+        (hash-ensure-modify! stars [gx . gy] (lambda _ '()) (cut cons n <>))))
+    (d3-for-each-adjacent-symbol process-symbol v xstart xend y))
+  (d3-for-each-number process-num v)
+  (+/list (map (match <> ([x y] (* x y)))
+               (filter (cut length=n? <> 2)
+                       (hash-values stars)))))
+(def (day3 (input (read-file-string (day-input-file 3))))
+  (check (day3.1 day3-example) => 4361)
+  (check (day3.2 day3-example) => 467835)
+  [(day3.1 input) (day3.2 input)])
