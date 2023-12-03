@@ -1,14 +1,17 @@
-;; Solutions to https://AdventOfCode.com/2023
+;; Solutions to https://AdventOfCode.com/2023 -*- Gerbil -*-
 
 (import
+  (for-syntax :std/iter :std/misc/number)
   :gerbil/gambit
   :std/assert
+  :std/contract
   :std/debug/DBG
   :std/format
   :std/iter
   :std/misc/bytes
   :std/misc/list
   :std/misc/number
+  :std/misc/path
   :std/misc/ports
   :std/misc/repr
   :std/misc/string
@@ -24,11 +27,13 @@
   :std/text/char-set
   :clan/assert
   :clan/base
-  :clan/matrix)
+  :clan/matrix
+  "./ll1-parser" ;; to be moved to std/text/ll1-parser
+  )
 
 ;;; General purpose utilities
 
-(def (day-input-file n) (path-expand (format "data/aoc2023-~d.input" n) (this-source-directory)))
+(def (day-input-file n) (subpath (this-source-directory) (format "data/aoc2023-~d.input" n)))
 (def u8vector-ref-set! u8vector-set!)
 (def vector-ref-set! vector-set!)
 
@@ -101,13 +106,8 @@
 (defrule (check-day1 x1 x2)
   (begin
     (check (x1 '("1abc2" "pqr3stu8vwx" "a1b2c3d4e5f" "treb7uchet")) => 142)
-    (check (x2 '("two1nine"
-                 "eightwothree"
-                 "abcone2threexyz"
-                 "xtwone3four"
-                 "4nineeightseven2"
-                 "zoneight234"
-                 "7pqrstsixteen")) => 281)))
+    (check (x2 '("two1nine" "eightwothree" "abcone2threexyz" "xtwone3four"
+                 "4nineeightseven2" "zoneight234" "7pqrstsixteen")) => 281)))
 (check-day1 day1.1 day1.2)
 (check-day1 day1.1* day1.2*)
 
@@ -116,3 +116,65 @@
   (check (day1.2 input) => (day1.2* input))
   [(day1.1* input) (day1.2* input)])
 
+;;; DAY 2 https://adventofcode.com/2023/day/2
+
+(def (ll1-color color)
+  (ll1-begin (ll1-string (as-string color)) (parse-pure color)))
+(def ll1-color-drawing
+  (ll1-bind ll1-uint
+            (lambda (n)
+              (ll1* cons
+                    (ll1-begin (ll1-string " ")
+                               (ll1-peek "rgb")
+                               (ll1-or (ll1-color 'red)
+                                       (ll1-color 'green)
+                                       (ll1-color 'blue)))
+                    (ll1-result n)))))
+(def ll1-end-of-drawing
+  (ll1-peek [#!eof ";\n\r"]))
+(def ll1-drawing ;; Parse each drawing to an alist
+  (ll1-separated ll1-color-drawing (ll1-string ", ") ll1-end-of-drawing))
+(def ll1-game
+  (ll1* cons
+   (ll1-begin (ll1-string "Game ") ll1-uint)
+   (ll1-begin (ll1-string ": ")
+              (ll1-separated ll1-drawing (ll1-string "; ") ll1-eolf?))))
+
+(def ll1-games (ll1-repeated (ll1-begin0 ll1-game ll1-eolf) ll1-eof))
+
+(def (possible-drawing? content drawing)
+  (andmap (match <> ([color . n] (<= n (assgetq color content)))) drawing))
+(def (possible-game? content game)
+  (andmap (cut possible-drawing? content <>) (cdr game)))
+(def (sum-possible-games content games)
+  (+/list (map car (filter (cut possible-game? content <>) games))))
+(def (day2.1 games)
+  (sum-possible-games '((red . 12) (green . 13) (blue . 14)) games))
+
+(def (game-minima game)
+  (def h (hash (red 0) (green 0) (blue 0)))
+  (for-each (lambda (drawing)
+              (for-each (match <> ([c . n] (unless (<= n (hash-get h c)) (hash-put! h c n))))
+                        drawing))
+            (cdr game))
+  h)
+(def (game-power game)
+  (foldl * 1 (hash-values (game-minima game))))
+(def (day2.2 games)
+  (+/list (map game-power games)))
+
+(def day2-example
+  (ll1/string ll1-games
+              "Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green
+Game 2: 1 blue, 2 green; 3 green, 4 blue, 1 red; 1 green, 1 blue
+Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
+Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
+Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"))
+
+(check (day2.1 day2-example) => 8)
+(check (day2.2 day2-example) => 2286)
+
+(def (day2 (input (ll1/file ll1-games (day-input-file 2))))
+  [(day2.1 input) (day2.2 input)])
+
+(check (day2) => [2505 70265])
