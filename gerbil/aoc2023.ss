@@ -10,12 +10,14 @@
   :std/format
   :std/iter
   :std/misc/bytes
+  :std/misc/func
   :std/misc/list
   :std/misc/number
   :std/misc/path
   :std/misc/ports
   :std/misc/repr
   :std/misc/string
+  :std/parser/ll1
   :std/sort
   :std/source
   :std/srfi/1
@@ -23,14 +25,11 @@
   :std/srfi/43
   :std/sugar
   :std/test
-  :std/text/basic-parsers
   :std/text/basic-printers
   :std/text/char-set
   :clan/assert
   :clan/base
-  :clan/matrix
-  "./ll1-parser" ;; being moved to std/parser/ll1
-  )
+  :clan/matrix)
 
 ;;; General purpose utilities
 (def (day-input-file n) (subpath (this-source-directory) (format "data/aoc2023-~d.input" n)))
@@ -264,3 +263,44 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
   (check (day3.1 day3-example) => 4361)
   (check (day3.2 day3-example) => 467835)
   [(day3.1 input) (day3.2 input)])
+
+;;; DAY 4 https://adventofcode.com/2023/day/4
+(def day4-example "\
+Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
+Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
+Card 3:  1 21 53 59 44 | 69 82 63 72 16 21 14  1
+Card 4: 41 92 73 84 69 | 59 84 76 51 58  5 54 83
+Card 5: 87 83 26 28 32 | 88 30 70 12 93 22 82 36
+Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11")
+;; Day 4 Parse
+(def ll1-d4-card
+  (ll1-list (ll1-begin (ll1-string "Card ") ll1-skip-space* ll1-uint)
+            (ll1-begin (ll1-string ":") ll1-skip-space*
+                       (ll1-repeated (ll1-begin0 ll1-uint ll1-skip-space*) (ll1-string "|")))
+            (ll1-repeated (ll1-begin ll1-skip-space* ll1-uint) ll1-eolf?)))
+(def ll1-d4 (cut ll1-lines <> ll1-d4-card))
+(def (d4-parse input) (ll1/string ll1-d4 input))
+;; Day 4 Part 1
+(def (card-matches card)
+  (match card ([_ winning have] (length (lset-intersection = winning have)))))
+(def (day4.1 cards)
+  (def (d4-score n-matches)
+    (if (zero? n-matches) 0 (arithmetic-shift 1 (1- n-matches))))
+  (+/list (map (compose d4-score card-matches) cards)))
+;; Day 4 Part 2
+(def (day4.2 cards)
+  (def len (length cards))
+  (let loop ((sum 0) (len len) (cards cards) (counts (repeat 1 len)))
+    (if (zero? len) sum
+        (with ([card . card*] cards)
+          (with ([count . count*] counts)
+            (def matches (card-matches card))
+            (defvalues (won more) (split-at count* (min len matches)))
+            (loop (+ sum count) (1- len) card* (append (map (cut + <> count) won) more)))))))
+;; Day 4 Wrap
+(def (day4 (input (day-input-string 4)))
+  (def example (d4-parse day4-example))
+  (check (day4.1 example) => 13)
+  (check (day4.2 example) => 30)
+  (def cards (d4-parse input))
+  [(day4.1 cards) (day4.2 cards)])
