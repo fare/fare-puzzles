@@ -29,20 +29,19 @@
   :clan/assert
   :clan/base
   :clan/matrix
-  "./ll1-parser" ;; to be moved to std/text/ll1-parser
+  "./ll1-parser" ;; being moved to std/parser/ll1
   )
 
 ;;; General purpose utilities
-
 (def (day-input-file n) (subpath (this-source-directory) (format "data/aoc2023-~d.input" n)))
+(def (day-input-string n) (read-file-string (day-input-file n)))
+
 (def u8vector-ref-set! u8vector-set!)
 (def vector-ref-set! vector-set!)
-
 (def (+/list l) (foldl + 0 l))
-(def digit-names #("zero" "one" "two" "three" "four" "five" "six" "seven" "eight" "nine"))
 
 ;;; DAY 1 https://adventofcode.com/2023/day/1
-
+(def digit-names #("zero" "one" "two" "three" "four" "five" "six" "seven" "eight" "nine"))
 ;; First approach: first filter the string for digits, then extract first and last
 ;; NB: I first tried to do a rewrite with regexp or a loop,
 ;; but that yielded the wrong result because of overlaps
@@ -73,7 +72,8 @@
 (def (calibration-value frobbed-line)
   (+ (* 10 (char-value (string-first frobbed-line)))
      (char-value (string-last frobbed-line))))
-(def (day1.0 frob input) (+/list (map (compose calibration-value frob) input)))
+(def (day1.0 frob input)
+  (+/list (map (compose calibration-value frob) (ll1/string ll1-lines input))))
 (def (day1.1 input) (day1.0 filter-digits input))
 (def (day1.2 input) (day1.0 filter-digits* input))
 
@@ -99,18 +99,24 @@
      (else (loop (1- i))))))
 (def (calibration-value* first last line)
   (+ (* 10 (first line)) (last line)))
-
-(def (day1.0* first last input) (+/list (map (cut calibration-value* first last <>) input)))
+(def (day1.0* first last input)
+  (+/list (map (cut calibration-value* first last <>) (ll1/string ll1-lines input))))
 (def (day1.1* input) (day1.0* first-digit last-digit input))
 (def (day1.2* input) (day1.0* first-digit* last-digit* input))
-
 (defrule (check-day1 x1 x2)
   (begin
-    (check (x1 '("1abc2" "pqr3stu8vwx" "a1b2c3d4e5f" "treb7uchet")) => 142)
-    (check (x2 '("two1nine" "eightwothree" "abcone2threexyz" "xtwone3four"
-                 "4nineeightseven2" "zoneight234" "7pqrstsixteen")) => 281)))
-
-(def (day1 (input (read-file-lines (day-input-file 1))))
+    (check (x1 "1abc2
+pqr3stu8vwx
+a1b2c3d4e5f
+treb7uchet") => 142)
+    (check (x2 "two1nine
+eightwothree
+abcone2threexyz
+xtwone3four
+4nineeightseven2
+zoneight234
+7pqrstsixteen") => 281)))
+(def (day1 (input (day-input-string 1)))
   (check-day1 day1.1 day1.2)
   (check-day1 day1.1* day1.2*)
   (check (day1.1 input) => (day1.1* input))
@@ -118,8 +124,7 @@
   [(day1.1* input) (day1.2* input)])
 
 ;;; DAY 2 https://adventofcode.com/2023/day/2
-
-;; Parser for games
+;; Parser for Day 2 Games
 (def (ll1-color color)
   (ll1-begin (ll1-string (as-string color)) (ll1-pure color)))
 (def ll1-color-drawing
@@ -142,37 +147,32 @@
    (ll1-begin (ll1-string ": ")
               (ll1-separated ll1-drawing (ll1-string "; ") ll1-eolf?))))
 (def ll1-games (ll1-repeated (ll1-begin0 ll1-game ll1-eolf) ll1-eof))
-
+;; Day 2 Part 1
 (def (possible-drawing? content drawing)
   (andmap (match <> ([color . n] (<= n (assgetq color content)))) drawing))
 (def (possible-game? content game)
   (andmap (cut possible-drawing? content <>) (cdr game)))
 (def (sum-possible-games content games)
   (+/list (map car (filter (cut possible-game? content <>) games))))
-(def (day2.1 games)
-  (sum-possible-games '((red . 12) (green . 13) (blue . 14)) games))
-
+(def (day2.1 input)
+  (sum-possible-games '((red . 12) (green . 13) (blue . 14)) (ll1/string ll1-games input)))
+;; Day 2 Part 2
 (def (game-minima game)
-  (def h (hash (red 0) (green 0) (blue 0)))
-  (for-each (lambda (drawing)
-              (for-each (match <> ([c . n] (unless (<= n (hash-get h c)) (hash-put! h c n))))
-                        drawing))
-            (cdr game))
+  (def h (hash))
+  (def f (match <> ([c . n] (unless (<= n (hash-ref h c 0)) (hash-put! h c n)))))
+  (for-each (lambda (drawing) (for-each f drawing)) (cdr game))
   h)
 (def (game-power game)
   (foldl * 1 (hash-values (game-minima game))))
-(def (day2.2 games)
-  (+/list (map game-power games)))
-
-(def day2-example
-  (ll1/string ll1-games
-              "Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green
+(def (day2.2 input)
+  (+/list (map game-power (ll1/string ll1-games input))))
+;; Wrapping up Day 2
+(def day2-example "Game 1: 3 blue, 4 red; 1 red, 2 green, 6 blue; 2 green
 Game 2: 1 blue, 2 green; 3 green, 4 blue, 1 red; 1 green, 1 blue
 Game 3: 8 green, 6 blue, 20 red; 5 blue, 4 red, 13 green; 5 green, 1 red
 Game 4: 1 green, 3 red, 6 blue; 3 green, 6 red; 3 green, 15 blue, 14 red
-Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"))
-
-(def (day2 (input (ll1/file ll1-games (day-input-file 2))))
+Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
+(def (day2 (input (day-input-string 2)))
   (check (day2.1 day2-example) => 8)
   (check (day2.2 day2-example) => 2286)
   (def r [(day2.1 input) (day2.2 input)])
@@ -180,22 +180,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"))
   r)
 
 ;;; DAY 3 https://adventofcode.com/2023/day/3
-
-;; Parser for games
-
-(def day3-example
-"\
-467..114..
-...*......
-..35..633.
-......#...
-617*......
-.....+.58.
-..592.....
-......755.
-...$.*....
-.664.598..")
-
+;; Parser for 2d string array
 (def (parse-day3 string)
   (def rows (ll1/string ll1-lines string))
   (def n-rows (length rows))
@@ -210,6 +195,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"))
   (with ((vector X Y V) v)
     (and (exact-integer? x) (< -1 x X) (exact-integer? y) (< -1 y Y)
          (string-ref V (i<-xy x y X Y)))))
+;; Day 3 Iterators -- in lieu of a data structure
 (def (d3-for-each-number fun v)
   (with ((vector X Y V) v)
     (for ((y (in-range Y)))
@@ -236,6 +222,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"))
     (for ((i (in-range (1- xstart) (1+ xend))))
       (c i (1- y))
       (c i (1+ y)))))
+;; Day 3 Part 1
 (def (has-adjacent-symbol? v xstart xend y)
   (let/cc return
     (d3-for-each-adjacent-symbol (lambda _ (return #t)) v xstart xend y)
@@ -248,6 +235,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"))
       (increment! sum n)))
   (d3-for-each-number process-num v)
   sum)
+;; Day 3 Part 2
 (def (day3.2 input)
   (def v (parse-day3 input))
   (def stars (hash))
@@ -260,6 +248,18 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green"))
   (+/list (map (match <> ([x y] (* x y)))
                (filter (cut length=n? <> 2)
                        (hash-values stars)))))
+;; Wrapping up Day 3
+(def day3-example "\
+467..114..
+...*......
+..35..633.
+......#...
+617*......
+.....+.58.
+..592.....
+......755.
+...$.*....
+.664.598..")
 (def (day3 (input (read-file-string (day-input-file 3))))
   (check (day3.1 day3-example) => 4361)
   (check (day3.2 day3-example) => 467835)
