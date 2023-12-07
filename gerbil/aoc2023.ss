@@ -1,5 +1,4 @@
 ;; Solutions to https://AdventOfCode.com/2023 -*- Gerbil -*-
-
 (import
   (for-syntax :std/iter :std/misc/number)
   :gerbil/gambit
@@ -11,6 +10,7 @@
   :std/iter
   :std/misc/bytes
   :std/misc/func
+  :std/misc/hash
   :std/misc/list
   :std/misc/number
   :std/misc/path
@@ -27,8 +27,6 @@
   :std/test
   :std/text/basic-printers
   :std/text/char-set
-  :clan/assert
-  :clan/base
   :clan/matrix)
 
 ;;; General purpose utilities
@@ -304,3 +302,129 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11")
   (check (day4.2 example) => 30)
   (def cards (d4-parse input))
   [(day4.1 cards) (day4.2 cards)])
+
+;;; DAY 5 https://adventofcode.com/2023/day/5
+;; Day 5 Parsing
+(def (ll1-string-val string val) (ll1-begin (ll1-string string) (ll1-pure val)))
+(def ll1-uints-line (ll1-repeated (ll1-begin ll1-skip-space* ll1-uint) ll1-eolf))
+(def ll1-name (ll1* make-symbol (ll1-char+ char-ascii-alphabetic?)))
+(def ll1-d5map
+  (ll1-begin
+   (ll1* cons*
+         (ll1-begin0 ll1-name (ll1-string "-to-"))
+         (ll1-begin0 ll1-name (ll1-string " map:\n"))
+         (ll1-repeated ll1-uints-line ll1-eolf))))
+(def ll1-seeds (ll1* cons (ll1-string-val "seeds:" 'seeds) (ll1-begin0 ll1-uints-line ll1-eol)))
+(def ll1-day5 (ll1* cons ll1-seeds (ll1-repeated ll1-d5map ll1-eof)))
+(def (day5-parse input) (ll1/string ll1-day5 input))
+;; Day 5 Part 1
+(def (d5-map map val)
+  (let/cc return
+    (for ([dst src len] (cddr map))
+      (when (<= src val (+ src len))
+        (return (+ dst (- val src)))))
+    val))
+(def (d5-all-maps val maps) (foldl d5-map val maps))
+(def (day5.1 almanac)
+  (with ([[_ . seeds] . maps] almanac)
+    (apply min (map (cut d5-all-maps <> maps) seeds))))
+;; Day 5 Part 2
+;; We use a list of intervals, because there aren't many of them.
+;; If there were a lot, we'd use balanced trees plus zippers.
+;; Representation: List of [src . off] which maps the interval upto the next [src . off]
+;; or to +inf.0 for the last entry, with off being the (- dst src) offset.
+;; NB: instead of "multiply by a scalar" we have "add a scalar" (with +inf.0 as absorbing element).
+(def d5m-0 []) ;; same as [[-inf.0 . +inf.0]] ;; compositional 0 (absorbing element)
+(def d5m-1 [[-inf.0 . 0]]) ;; same as [[-inf.0 . 0]] ;; compositional 1 (identity element)
+(def (d5m-offset offset) (if (= offset +inf.0) [] [[-inf.0 . offset]])) ;; constant offset
+(def (d5m-paste mhead cut mtail) ;; paste mhead until cut (excluded) then mtail
+  (def (head off m)
+    (match m
+      ([] (tail off +inf.0 mtail))
+      ([[src0 . off0] . m0]
+       (if (>= src0 cut) (tail off +inf.0 mtail)
+           [[src0 . off0] :: (head off0 m0)]))))
+  (def (tail offh offt m)
+    (match m
+      ([] (paste offh offt []))
+      ([[src0 . off0] . m0]
+       (cond
+        ((< src0 cut) (tail offh off0 m0))
+        ((= src0 cut) (paste offh off0 m0))
+        (else #|(> src0 cut)|# (paste offh offt m))))))
+  (def (paste offh offt m)
+    (if (= offh offt) m [[cut . offt] . m]))
+  (cond
+   ((= cut +inf.0) mhead)
+   ((= cut -inf.0) mtail)
+   (else (head +inf.0 mhead))))
+(def (d5m-set-range off src end m) ;; override one range
+  (d5m-paste m src (d5m-paste (d5m-offset off) end m)))
+(def (d5m-shift s m) ;; x -> o + m( x + s )
+  (if (= s +inf.0) []
+      (map (match <> ([src . off] [(- src s) :: (+ off o s)])) m)))
+(def d5m<-seeds
+  (match <> ([] d5m-0)
+         ([src len . r] (d5m-set-range 0 src (+ src len) (d5m<-seeds r)))))
+(def (d5m<-map map)
+  (let loop ((ranges (cddr map)))
+    (match ranges ([] d5m-1)
+           ([[dst src len] . r] (d5m-set-range (- dst src) src (+ src len) (loop r))))))
+(def (d5m-normalize m)
+  (match m ([[_ . +inf.0] . mm] mm) (else m)))
+(def (d5m* m1 m2) ;; (compose m1 m2)
+  (match m2
+    ([] [])
+    ([[src . off] . m2r]
+     (let (m1l (d5m-shift off (d5m-paste [] (+ off src) m1)))
+       (match m2r
+         ([] m1l)
+         ([[end . _] . _] (d5m-paste m1l end (d5m* m1 (d5m-normalize m2r)))))))))
+(def (d5-all-maps/intervals intervals maps) (foldl d5m* intervals maps))
+(def (d5m-min d5m)
+  (xmin/list (map (match <> ([off . src] (+ off src))) d5m)))
+(def (day5.2 almanac)
+  (with ([[_ . seeds] . maps] almanac)
+    (d5m-min (foldl d5m* (d5m<-seeds seeds) (map d5m<-map maps)))))
+;; Day 5 Wrap up
+(def day5-example "\
+seeds: 79 14 55 13
+
+seed-to-soil map:
+50 98 2
+52 50 48
+
+soil-to-fertilizer map:
+0 15 37
+37 52 2
+39 0 15
+
+fertilizer-to-water map:
+49 53 8
+0 11 42
+42 0 7
+57 7 4
+
+water-to-light map:
+88 18 7
+18 25 70
+
+light-to-temperature map:
+45 77 23
+81 45 19
+68 64 13
+
+temperature-to-humidity map:
+0 69 1
+1 0 69
+
+humidity-to-location map:
+60 56 37
+56 93 4
+")
+(def (day5 (input (day-input-string 5)))
+  (def example (day5-parse day5-example))
+  (check (day5.1 example) => 35)
+  (check (day5.2 example) => 46)
+  (def almanac (day5-parse input))
+  [(day5.1 almanac) (day5.2 almanac)])

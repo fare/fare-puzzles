@@ -1,0 +1,2 @@
+(package: puzzles
+ depend: ("github.com/mighty-gerbils/gerbil-utils"))
