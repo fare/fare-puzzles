@@ -480,7 +480,7 @@ Distance:  9  40  200")
          (card-nums (map (cut string-index cards <>) (string->list h)))
          (card-counts (make-vector 13 0))
          (_ (for-each (lambda (n) (increment! (vector-ref card-counts n))) card-nums))
-         (counts (take (effective-card-counts n card-counts) 4)))
+         (counts (take (effective-card-counts n card-counts) 2))) ;; two largest counts are enough
     (append counts card-nums)))
 (def ((compare-hand n) h1 h2) (lexicographic<? < (hand->list n h1) (hand->list n h2)))
 (def ((compare-bids n) bid1 bid2) ((compare-hand n) (first bid1) (first bid2)))
