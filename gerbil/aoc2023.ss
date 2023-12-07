@@ -27,7 +27,7 @@
   :std/test
   :std/text/basic-printers
   :std/text/char-set
-  :clan/matrix)
+  :clan/order)
 
 ;;; General purpose utilities
 (def (day-input-file n) (subpath (this-source-directory) (format "data/aoc2023-~d.input" n)))
@@ -460,3 +460,45 @@ Distance:  9  40  200")
   (check (day6.2 day6-example) => 71503)
   #;(check (day6.2 example) => 46)
   [(day6.1 input) (day6.2 input)])
+
+;;; DAY 7 https://adventofcode.com/2023/day/7
+;; Day 7 Parsing
+(def cards7.1 (string-reverse "AKQJT98765432"))
+(def cards7.2 (string-reverse "AKQT98765432J"))
+(def ll1-day7 (cut ll1-lines <> (ll1-list (ll1-n-chars 5 cards7.1)
+                                          (ll1-begin (ll1-string " ") ll1-uint))))
+(def (day7-parse input) (ll1/string ll1-day7 input))
+;; Day 7 Part 1
+(def (effective-card-counts n card-counts)
+  (let (l (vector->list card-counts))
+    (case n ((1) (sort l >))
+          ((2) (with ([j . k] l)
+                 (with ([h . t] (sort k >))
+                   [(+ j h) . t]))))))
+(def (hand->list n h)
+  (let* ((cards (case n ((1) cards7.1) ((2) cards7.2)))
+         (card-nums (map (cut string-index cards <>) (string->list h)))
+         (card-counts (make-vector 13 0))
+         (_ (for-each (lambda (n) (increment! (vector-ref card-counts n))) card-nums))
+         (counts (take (effective-card-counts n card-counts) 4)))
+    (append counts card-nums)))
+(def ((compare-hand n) h1 h2) (lexicographic<? < (hand->list n h1) (hand->list n h2)))
+(def ((compare-bids n) bid1 bid2) ((compare-hand n) (first bid1) (first bid2)))
+(def (day7.n n bids)
+  (+/list (map * (map second (sort bids (compare-bids n))) (iota (length bids) 1))))
+(def (day7.1 bids) (day7.n 1 bids))
+(def (day7.2 bids) (day7.n 2 bids))
+;; Day 7 Wrap up
+(def day7-example "\
+32T3K 765
+T55J5 684
+KK677 28
+KTJJT 220
+QQQJA 483
+")
+(def (day7 (input (day-input-string 7)))
+  (def example (day7-parse day7-example))
+  (def bids (day7-parse input))
+  (check (day7.1 example) => 6440)
+  (check (day7.2 example) => 5905)
+  [(day7.1 bids) (day7.2 bids)]) ;; 252186771 too low
