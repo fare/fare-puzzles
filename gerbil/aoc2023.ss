@@ -428,3 +428,35 @@ humidity-to-location map:
   (check (day5.2 example) => 46)
   (def almanac (day5-parse input))
   [(day5.1 almanac) (day5.2 almanac)])
+
+;;; DAY 6 https://adventofcode.com/2023/day/6
+;; Day 6 Parsing
+(def ll1-day6 (ll1-list (ll1-begin (ll1-string "Time:") ll1-uints-line)
+                        (ll1-begin (ll1-string "Distance:") ll1-uints-line)))
+(def (day6-parse input) (ll1/string ll1-day6 input))
+;; Day 6 Part 1
+(def (d6-distance time charge) (* charge (- time charge)))
+;; find the length of the x segment such that x * (t - x) > d
+;; extremities are at: -x2 + t*x -d > 0 ;; ( -t ± √ t^2-4d )/-2 = (t ± √ t^2-4d )/2
+(def (d6-ways-to-win time distance)
+  (def discr (- (* time time) (* 4 distance)))
+  (if (negative? discr) 0
+      (let* ((sd (integer-sqrt discr))
+             (down (ceiling (/ (- time sd) 2)))
+             (up (floor (/ (+ time sd) 2)))
+             (exact? (= (d6-distance time down) distance))
+             (adj (if exact? 1 0))
+             (down1 (+ down adj))
+             (up1 (- up adj)))
+        (if (>= up1 down1) (+ 1 (- up1 down1)) 0))))
+(def (day6.1 races) (foldl * 1 (apply map d6-ways-to-win (day6-parse races))))
+(def (day6.2 race) (day6.1 (string-delete #\space race)))
+;; Day 6 Wrap up
+(def day6-example "\
+Time:      7  15   30
+Distance:  9  40  200")
+(def (day6 (input (day-input-string 6)))
+  (check (day6.1 day6-example) => 288)
+  (check (day6.2 day6-example) => 71503)
+  #;(check (day6.2 example) => 46)
+  [(day6.1 input) (day6.2 input)])
