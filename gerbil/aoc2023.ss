@@ -9,6 +9,7 @@
   :std/format
   :std/iter
   :std/misc/bytes
+  :std/misc/evector
   :std/misc/func
   :std/misc/hash
   :std/misc/list
@@ -17,12 +18,14 @@
   :std/misc/ports
   :std/misc/repr
   :std/misc/string
+  :std/misc/vector
   :std/parser/ll1
   :std/sort
   :std/source
-  :std/srfi/1
-  :std/srfi/13
-  :std/srfi/43
+  :std/srfi/1 ; lists
+  :std/srfi/13 ; strings
+  :std/srfi/133 ; vectors
+  :std/srfi/141 ; integer division
   :std/sugar
   :std/test
   :std/text/basic-printers
@@ -37,7 +40,7 @@
 (def vector-ref-set! vector-set!)
 (def (+/list l) (foldl + 0 l))
 
-;;; DAY 1 https://adventofcode.com/2023/day/1
+;;; DAY 1 https://adventofcode.com/2023/day/1 -- simple string search
 (def digit-names #("zero" "one" "two" "three" "four" "five" "six" "seven" "eight" "nine"))
 ;; First approach: first filter the string for digits, then extract first and last
 ;; NB: I first tried to do a rewrite with regexp or a loop,
@@ -120,7 +123,7 @@ zoneight234
   (check (day1.2 input) => (day1.2* input))
   [(day1.1* input) (day1.2* input)])
 
-;;; DAY 2 https://adventofcode.com/2023/day/2
+;;; DAY 2 https://adventofcode.com/2023/day/2 -- parsing and iterating
 ;; Parser for Day 2 Games
 (def (ll1-color color)
   (ll1-begin (ll1-string (as-string color)) (ll1-pure color)))
@@ -176,7 +179,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
   (check r => [2505 70265])
   r)
 
-;;; DAY 3 https://adventofcode.com/2023/day/3
+;;; DAY 3 https://adventofcode.com/2023/day/3 -- iteration over 2d array
 ;; Parser for 2d string array
 (def (parse-day3 string)
   (def rows (ll1/string ll1-lines string))
@@ -262,7 +265,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
   (check (day3.2 day3-example) => 467835)
   [(day3.1 input) (day3.2 input)])
 
-;;; DAY 4 https://adventofcode.com/2023/day/4
+;;; DAY 4 https://adventofcode.com/2023/day/4 -- counting and recursion
 (def day4-example "\
 Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53
 Card 2: 13 32 20 16 61 | 61 30 68 82 17 32 24 19
@@ -303,7 +306,7 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11")
   (def cards (d4-parse input))
   [(day4.1 cards) (day4.2 cards)])
 
-;;; DAY 5 https://adventofcode.com/2023/day/5
+;;; DAY 5 https://adventofcode.com/2023/day/5 -- merging intervals
 ;; Day 5 Parsing
 (def (ll1-string-val string val) (ll1-begin (ll1-string string) (ll1-pure val)))
 (def ll1-uints-line (ll1-repeated (ll1-begin ll1-skip-space* ll1-uint) ll1-eolf))
@@ -429,7 +432,7 @@ humidity-to-location map:
   (def almanac (day5-parse input))
   [(day5.1 almanac) (day5.2 almanac)])
 
-;;; DAY 6 https://adventofcode.com/2023/day/6
+;;; DAY 6 https://adventofcode.com/2023/day/6 -- simple numeric optimization
 ;; Day 6 Parsing
 (def ll1-day6 (ll1-list (ll1-begin (ll1-string "Time:") ll1-uints-line)
                         (ll1-begin (ll1-string "Distance:") ll1-uints-line)))
@@ -461,7 +464,7 @@ Distance:  9  40  200")
   #;(check (day6.2 example) => 46)
   [(day6.1 input) (day6.2 input)])
 
-;;; DAY 7 https://adventofcode.com/2023/day/7
+;;; DAY 7 https://adventofcode.com/2023/day/7 -- counting and sorting
 ;; Day 7 Parsing
 (def cards7.1 (string-reverse "AKQJT98765432"))
 (def cards7.2 (string-reverse "AKQT98765432J"))
@@ -494,11 +497,215 @@ Distance:  9  40  200")
 T55J5 684
 KK677 28
 KTJJT 220
-QQQJA 483
-")
+QQQJA 483")
 (def (day7 (input (day-input-string 7)))
   (def example (day7-parse day7-example))
   (def bids (day7-parse input))
   (check (day7.1 example) => 6440)
   (check (day7.2 example) => 5905)
-  [(day7.1 bids) (day7.2 bids)]) ;; 252186771 too low
+  [(day7.1 bids) (day7.2 bids)])
+
+;;; DAY 8 https://adventofcode.com/2023/day/8 -- finite state machines, deterministic and non-
+;; Day 8 Parsing
+(def ll1-d8node (ll1-n-chars 3 char-ascii-alphanumeric?))
+(def ll1-d8nodespec
+  (ll1-list (ll1-begin0 ll1-d8node (ll1-string " = ("))
+            (ll1-begin0 ll1-d8node (ll1-string ", "))
+            (ll1-begin0 ll1-d8node (ll1-string ")") ll1-eolf)))
+(def ll1-day8 (ll1-list (ll1-begin0 (ll1-char* "LR") ll1-eol ll1-eol)
+                        (ll1-repeated ll1-d8nodespec ll1-eof)))
+(def (day8-parse input) (ll1/string ll1-day8 input))
+;; Day 8 Part 1
+(def (day8.1 machine)
+  (with ([path nodes] machine)
+    (def h (list->hash-table nodes))
+    (def l (string-length path))
+    (let loop ((i 0) (node "AAA"))
+      (if (equal? node "ZZZ") i
+          (loop (1+ i) ((case (string-ref path (modulo i l)) ((#\L) first) ((#\R) second))
+                        (hash-get h node)))))))
+;; Day 8 Part 2
+;; From each start, a cycle of length N is found after M steps or the full path of length P,
+;; The total cycle is thus actually of length P*N, and we find exit nodes at regular intervals
+;; within, plus possibly during the pre-cycle phase.
+;; Once all the cycles and the M's are found,
+;; we can solve co-exit on all of them. If S0 has M0P N0P, S1 has M1P N1P, then,
+;; N=LCM(N0P,N1P)=A0*N0P=A1*N1P, M=max(M0P,M1P), new state table
+;; NB: Can simultaneously do all of a cycle at once for result in O(n (log n)^k)
+;; In the end: look whether there's a solution of length < MP, otherwise, pick the first in NP
+;; Also, sparse(?) lists of exits.
+;; And end-form tells you all the ends from a given start
+(defstruct end-form (precycle-len precycle-ends cycle-len cycle-ends) transparent: #t)
+(def end-form-id (end-form 0 [] 1 [0])) ;; everything is an end!
+(def (end-form-min ef) ;; the first solution in a end-form
+  (with ((end-form pl pe _ e) ef)
+    (if (pair? pe) (first pe)
+      (if (pair? e) (+ pl (first e))
+          +inf.0))))
+(def (repeat-ends n l e) ;; repeat the ends e for n cycles of length l
+  (cond ((or (zero? n) (null? e)) [])
+        ((= n 1) e)
+        (else (append-map (lambda (i) (def p (* i l)) (map (cut + p <>) e)) (iota n)))))
+(def (shift-ends s e) ;; shift ends by s
+  (if (zero? s) e (map (cut + <> s) e)))
+(def (rotate-ends s l e) ;; rotate the ends e in a cycle of length l by s
+  (let* ((s (modulo s l))
+         (l-s (- l s))
+         ((values e- e+) (span (cut < <> s) e)))
+    (append (shift-ends (- s) e+) (shift-ends l-s e-))))
+(def (shift-end-form s ef) ;; shift an end-form to extend its pre-cycle length
+  (check-argument-uint s)
+  (with ((end-form pl pe l e) ef)
+    (let* ((ee (rotate-ends s l e))
+           (n (ceiling-quotient s l))
+           (er (repeat-ends n l ee)))
+      (end-form (+ pl s) (append pe (shift-ends pl (take-while (cut < <> s) er))) l ee))))
+(def (intersect-sorted-lists e0 e1)
+  (def (a e0 e1) (match e0 ([x0 . r0] (b x0 r0 e1)) ([] [])))
+  (def (b x0 r0 e1) (match e1 ([x1 . r1] (c x0 r0 x1 r1)) ([] [])))
+  (def (c x0 r0 x1 r1)
+    (cond ((= x0 x1) (cons x0 (a r0 r1)))
+          ((< x0 x1) (b x1 r1 r0))
+          (else #|(> x0 x1)|# (b x0 r0 r1))))
+  (a e0 e1))
+(def (merge-end-forms ef0 ef1)
+  (with ((end-form pl0 _ l0 _) ef0)
+    (with ((end-form pl1 _ l1 _) ef1)
+      (defvalues (pl ef0+ ef1+) ;; align the two end-forms to the same prefix length
+        (if (< pl0 pl1)
+          (values pl1 (shift-end-form (- pl1 pl0) ef0) ef1)
+          (values pl0 ef0 (shift-end-form (- pl0 pl1) ef1))))
+      (def pe (intersect-sorted-lists (end-form-precycle-ends ef0+) (end-form-precycle-ends ef1+)))
+      (def l (lcm l0 l1))
+      (defvalues (j0 j1 g) (bezout l0 l1)) ;; j0*l0 + j1*l1 = g
+      (def j1l1 (* j1 l1))
+      ;; x in e == Ex x0 in ef0+, Ex i0 in [0, a0),
+      ;;             Ex x1 in ef1+, Ex i1 in [0, a1),   x = x0+i0*l0 = x1+i1*l1  [l]
+      ;; x0-x1 = i0*l0 - i0*l1 ;; x0-x1 = q*g+r = q*j0*l0+q*j1*l1+r. If r!=0, bad.
+      (def e (with-list-builder (c)
+               (for ((x0 (end-form-cycle-ends ef0+)))
+                 (for ((x1 (end-form-cycle-ends ef1+)))
+                   (let (((values q r) (floor/ (- x0 x1) g)))
+                     (when (zero? r)
+                       (c (modulo (+ x1 (* j1l1 q)) l))))))))
+      (end-form pl pe l (sort e <)))))
+(defstruct node-info
+  (name ;; TLA
+   start? end? ;; is in a start? an end?
+   L R succ ;; next node through L, through R, through the whole path.
+   ends ;; list of ends within path
+   precycle cycle cycle-pos) ;; iterations before cycle reached, head of cycle, position in cycle
+  transparent: #t final: #t)
+(def (info node)
+  (with ([n L R] node)
+    (node-info n (eqv? (string-ref n 2) #\A) (eqv? (string-ref n 2) #\Z)
+               L R #f #f #f #f #f)))
+(def (day8.2 machine)
+  (def path (first machine))
+  (def nodes (second machine))
+  (defvalues (i->ni* Nstarts)
+    (let-values (((starts non-starts) (partition node-info-start? (map info nodes))))
+      (values (list->vector (append starts non-starts)) (length starts))))
+  (defrule (i->ni i) (vector-ref i->ni* i))
+  (def n->i* (invert-hash<-vector i->ni* key: node-info-name))
+  (defrule (n->i n) (hash-get n->i* n))
+  (def P (string-length path))
+  (def N (vector-length i->ni*))
+  (vector-for-each
+   (lambda (ni)
+     (set! (node-info-L ni) (n->i (node-info-L ni)))
+     (set! (node-info-R ni) (n->i (node-info-R ni)))) i->ni*)
+  (def (step i p)
+    ((case (string-ref path p)
+       ((#\L) node-info-L) ((#\R) node-info-R))
+     (i->ni i)))
+  (def (compute-succ/ends i)
+    (def ni (i->ni i))
+    (def e (list->evector '()))
+    (let loop ((p 0) (j i))
+      (cond ((= p P)
+             (set! (node-info-ends ni) (evector->list e))
+             (set! (node-info-succ ni) j)
+             j)
+            (else
+             (when (node-info-end? (i->ni j)) (evector-push! e p)) ;; revert later?
+             (loop (1+ p) (step j p))))))
+  (def cycles (list->evector '()))
+  (defrule (Ncycles) (evector-fill-pointer cycles))
+  ;; Find all the cycles from the start points
+  (for ((i (in-range Nstarts)))
+    (let* ((n (Ncycles))
+           (cycle (list->evector '())))
+      (let loop ((i i))
+        (let* ((ni (i->ni i))
+               (c (node-info-cycle ni)))
+          (cond
+           ((eqv? n c) ;; new cycle completed!
+            (let* ((cv (evector->vector cycle))
+                   (cl (vector-length cv))
+                   (head (vector-index (cut eqv? <> i) cv))
+                   (elements (subvector cv head cl)))
+              (for (h (in-range head))
+                (let (nh (i->ni (vector-ref cv h)))
+                  (set! (node-info-precycle nh) (- head h))
+                  (set! (node-info-cycle-pos nh) 0)))
+              (for (e (in-range head cl))
+                (let (ne (i->ni (vector-ref cv e)))
+                  (set! (node-info-precycle ne) 0)
+                  (set! (node-info-cycle-pos ne) (- e head))))
+              (evector-push! cycles (- cl head))))
+           (c ;; prefix to old cycle found
+            (let* ((pv (evector->vector cycle))
+                   (pl (vector-length pv))
+                   (cp (node-info-cycle-pos ni)))
+              (for (p (in-range pl))
+                (let (np (i->ni (vector-ref pv p)))
+                  (set! (node-info-cycle np) c)
+                  (set! (node-info-precycle np) (- pl p))
+                  (set! (node-info-cycle-pos np) cp)))))
+           (else ;; into the unknown
+            (set! (node-info-cycle ni) n)
+            (evector-push! cycle i)
+            (loop (compute-succ/ends i))))))))
+  (def (find-ends i l)
+    (def e (list->evector '()))
+    (let loop ((j i) (s 0) (l l))
+      (if (zero? l)
+        (values (evector->list e) j)
+        (let ((nj (i->ni j)))
+          (for-each (cut evector-push! e <>) (shift-ends s (node-info-ends nj)))
+          (loop (node-info-succ nj) (+ s P) (1- l))))))
+  (def (compute-end-form i)
+    (def ni (i->ni i))
+    (def pl (* P (node-info-precycle ni)))
+    (defvalues (pe h) (find-ends i (node-info-precycle ni)))
+    (def cl (evector-ref cycles (node-info-cycle ni)))
+    (def l (* P cl))
+    (defvalues (e _) (find-ends h cl))
+    (end-form pl pe l e))
+  (end-form-min (foldl merge-end-forms end-form-id (map compute-end-form (iota Nstarts)))))
+;; Day 8 Wrap up
+(def day8-example1 "\
+LLR
+
+AAA = (BBB, BBB)
+BBB = (AAA, ZZZ)
+ZZZ = (ZZZ, ZZZ)")
+(def day8-example2 "\
+LR
+
+11A = (11B, XXX)
+11B = (XXX, 11Z)
+11Z = (11B, XXX)
+22A = (22B, XXX)
+22B = (22C, 22C)
+22C = (22Z, 22Z)
+22Z = (22B, 22B)
+XXX = (XXX, XXX)")
+(def (day8 (input (day-input-string 8)))
+  (def example1 (day8-parse day8-example1))
+  (def example2 (day8-parse day8-example2))
+  (check (day8.1 example1) => 6)
+  (check (day8.2 example2) => 6)
+  (def machine (day8-parse input))
+  [(day8.1 machine) (day8.2 machine)])
