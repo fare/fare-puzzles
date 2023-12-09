@@ -30,6 +30,7 @@
   :std/test
   :std/text/basic-printers
   :std/text/char-set
+  :clan/memo
   :clan/order)
 
 ;;; General purpose utilities
@@ -709,3 +710,42 @@ XXX = (XXX, XXX)")
   (check (day8.2 example2) => 6)
   (def machine (day8-parse input))
   [(day8.1 machine) (day8.2 machine)])
+
+;;; DAY 9 https://adventofcode.com/2023/day/9 -- Polynomial interpolation
+;; https://en.wikipedia.org/wiki/Lagrange_polynomial
+;; 0, a0, a1+k*a0, a2+k*a1+k(k+1)/2*a0, etc....
+;; Sequences defined by simple integrations like that are polynomials.
+;; Therefore, instead of going through the hard way of iterating, we can "just" interpolate,
+;; and get a formula that works not just for the next or previous integer k,
+;; but for all numbers (including complex, or more complex).
+;; Day 9 Parsing
+(def ll1-sints-line (ll1-repeated (ll1-begin ll1-skip-space* ll1-sint) ll1-eolf))
+(def ll1-day9 (ll1-repeated ll1-sints-line ll1-eof))
+(def (day9-parse input) (ll1/string ll1-day9 input))
+;; Day 9 Part 1
+(def fact (memoize-recursive-sequence (lambda (n) (* n (fact (1- n)))) cache: (list->evector '(1))))
+;; Lagrange polynomial barycentric weight for x^j for interpolation points being the first k integers (starting at 0)
+(def (weight j k) (let (l (- k j 1)) (/ (* (fact j) (fact l) (if (odd? l) -1 1)))))
+(define-memo-function (weights k) (map (cut weight <> k) (iota k)))
+(def (interpolate seq (x (length seq)))
+  (def n (length seq))
+  (let loop ((N 0) (D 0) (j 0) (ys seq) (ws (weights n)))
+    (if (= j n) (/ N D)
+        (with ([y . yr] ys)
+          (with ([w . wr] ws)
+            (let (z (/ w (- x j)))
+              (loop (+ N (* y z)) (+ D z) (1+ j) yr wr)))))))
+(def (day9.1 sequences)
+  (+/list (map interpolate sequences)))
+(def (day9.2 sequences)
+  (+/list (map (cut interpolate <> -1) sequences)))
+;; Day 9 Wrap up
+(def day9-example "0 3 6 9 12 15
+1 3 6 10 15 21
+10 13 16 21 30 45")
+(def (day9 (input (day-input-string 9)))
+  (def example (day9-parse day9-example))
+  (check (day9.1 example) => 114)
+  (check (day9.2 example) => 2)
+  (def sequences (day9-parse input))
+  [(day9.1 sequences) (day9.2 sequences)])
