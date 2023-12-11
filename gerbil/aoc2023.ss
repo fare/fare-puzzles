@@ -365,9 +365,9 @@ Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11")
    (else (head +inf.0 mhead))))
 (def (d5m-set-range off src end m) ;; override one range
   (d5m-paste m src (d5m-paste (d5m-offset off) end m)))
-(def (d5m-shift s m) ;; x -> o + m( x + s )
+(def (d5m-shift s m) ;; x -> m( x + s )
   (if (= s +inf.0) []
-      (map (match <> ([src . off] [(- src s) :: (+ off o s)])) m)))
+      (map (match <> ([src . off] [(- src s) :: (+ off s)])) m)))
 (def d5m<-seeds
   (match <> ([] d5m-0)
          ([src len . r] (d5m-set-range 0 src (+ src len) (d5m<-seeds r)))))
@@ -837,20 +837,18 @@ L7JLJL-JLJLJL--JLJ.L")
   [(day10.1 pipes) (day10.2 pipes)])
 
 
-;;; DAY 11 https://adventofcode.com/2023/day/11 -- Green's Theorem
+;;; DAY 11 https://adventofcode.com/2023/day/11 -- L¹ distance and counting
 ;; Day 11 Part 1
 (def (sumdistances widths coords)
   (def L (vector-length widths))
   (def conv (make-vector L 0))
   (for (i (in-range 1 L))
     (set! (vector-ref conv i) (+ (vector-ref conv (1- i)) (vector-ref widths (1- i)))))
+  ;; Instead of summing N(N-1)/2 differences,
+  ;; sort the terms in N*log N then count how much each term appears positively vs negatively
   (def sc (sort (map (lambda (c) (vector-ref conv c)) coords) <))
   (def N (length sc))
-  (def sum 0)
-  (for ((i (in-range N))
-        (x sc))
-    (increment! sum (* x (- (* 2 i) N -1))))
-  sum)
+  (foldl (lambda (x i s) (+ s (* x (- (* 2 i) N -1)))) 0 sc (iota N)))
 (def (day11* galaxy age)
   (with ((vector X Y s) galaxy)
     (let ((xwidth (make-vector X age))
@@ -863,7 +861,7 @@ L7JLJL-JLJLJL--JLJ.L")
               (set! (vector-ref xwidth x) 1)
               (set! (vector-ref ywidth y) 1)
               (push! (cons x y) stars)))))
-      (+ (sumdistances xwidth (map car stars))
+      (+ (sumdistances xwidth (map car stars)) ;; L¹ means we can sum the coordinates independently
          (sumdistances ywidth (map cdr stars))))))
 (def (day11.1 galaxy) (day11* galaxy 2))
 (def (day11.2 galaxy) (day11* galaxy 1000000))
