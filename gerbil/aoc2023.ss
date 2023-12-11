@@ -752,7 +752,6 @@ XXX = (XXX, XXX)")
   [(day9.1 sequences) (day9.2 sequences)])
 
 ;;; DAY 10 https://adventofcode.com/2023/day/10 -- Green's Theorem
-;; Day 10 Part 1
 (def xy+ (case-lambda
            (() '(0 . 0))
            ((p) p)
@@ -775,21 +774,6 @@ XXX = (XXX, XXX)")
     (member wind (vector-ref pipe-connections pipe))))
 (def (find-wind v p winds)
   (find (lambda (w) (has-connection? v (pos+wind p w) (-wind w))) winds))
-(def (day10.1* v)
-  (with ((vector X Y s) v)
-    (defvalues (x y) (xy<-i (string-index s #\S) X Y))
-    (def pos (cons x y))
-    (def wind (find-wind v pos (iota 4)))
-    ;;(DBG 10100 pos wind)
-    (let loop ((p (pos+wind pos wind)) (from (-wind wind)) (l 1))
-      ;;(DBG 10101 p from l (pget v p))
-      (def pipe (pipe-get v p))
-      (if (equal? pipe 7) ;; #\S
-        (half l)
-        (let (w (find-wind v p (delete from (vector-ref pipe-connections pipe))))
-          (assert! (has-connection? v p from))
-          (assert! w)
-          (loop (pos+wind p w) (-wind w) (1+ l)))))))
 (def (day10* v f)
   (with ((vector X Y s) v)
     (defvalues (x y) (xy<-i (string-index s #\S) X Y))
@@ -851,3 +835,54 @@ L7JLJL-JLJLJL--JLJ.L")
   (check (day10.2 example2.2) => 10)
   (def pipes (parse-2d-string input))
   [(day10.1 pipes) (day10.2 pipes)])
+
+
+;;; DAY 11 https://adventofcode.com/2023/day/11 -- Green's Theorem
+;; Day 11 Part 1
+(def (sumdistances widths coords)
+  (def L (vector-length widths))
+  (def conv (make-vector L 0))
+  (for (i (in-range 1 L))
+    (set! (vector-ref conv i) (+ (vector-ref conv (1- i)) (vector-ref widths (1- i)))))
+  (def sc (sort (map (lambda (c) (vector-ref conv c)) coords) <))
+  (def N (length sc))
+  (def sum 0)
+  (for ((i (in-range N))
+        (x sc))
+    (increment! sum (* x (- (* 2 i) N -1))))
+  sum)
+(def (day11* galaxy age)
+  (with ((vector X Y s) galaxy)
+    (let ((xwidth (make-vector X age))
+          (ywidth (make-vector Y age))
+          (stars '()))
+      (for (x (in-range X))
+        (for (y (in-range Y))
+          (let (c (xyget galaxy x y))
+            (when (eqv? c #\#)
+              (set! (vector-ref xwidth x) 1)
+              (set! (vector-ref ywidth y) 1)
+              (push! (cons x y) stars)))))
+      (+ (sumdistances xwidth (map car stars))
+         (sumdistances ywidth (map cdr stars))))))
+(def (day11.1 galaxy) (day11* galaxy 2))
+(def (day11.2 galaxy) (day11* galaxy 1000000))
+;; Day 11 Wrap up
+(def day11-example "\
+...#......
+.......#..
+#.........
+..........
+......#...
+.#........
+.........#
+..........
+.......#..
+#...#.....")
+(def (day11 (input (day-input-string 11)))
+  (def example (parse-2d-string day11-example))
+  (check (day11.1 example) => 374)
+  (check (day11* example 10) => 1030)
+  (check (day11* example 100) => 8410)
+  (def pipes (parse-2d-string input))
+  [(day11.1 pipes) (day11.2 pipes)])
