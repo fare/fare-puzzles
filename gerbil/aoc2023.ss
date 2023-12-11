@@ -182,7 +182,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
 
 ;;; DAY 3 https://adventofcode.com/2023/day/3 -- iteration over 2d array
 ;; Parser for 2d string array
-(def (parse-day3 string)
+(def (parse-2d-string string) ;; : String -> (Vector-Tuple UInt UInt String)
   (def rows (ll1/string ll1-lines string))
   (def n-rows (length rows))
   (check-argument-positive-integer n-rows)
@@ -192,7 +192,8 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
                   "equal length rows" string)
   (vector n-cols n-rows (string-concatenate rows)))
 (def (i<-xy x y X Y) (+ x (* y X)))
-(def (d3get v x y)
+(def (xy<-i i X Y) (defvalues (y x) (floor/ i X)) (values x y))
+(def (xyget v x y)
   (with ((vector X Y V) v)
     (and (exact-integer? x) (< -1 x X) (exact-integer? y) (< -1 y Y)
          (string-ref V (i<-xy x y X Y)))))
@@ -202,7 +203,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
     (for ((y (in-range Y)))
       (let loop ((xstart 0))
         (when (< xstart X)
-          (if (char-ascii-digit (d3get v xstart y))
+          (if (char-ascii-digit (xyget v xstart y))
             (let* ((xendy (string-index V (lambda (x) (not (char-ascii-digit x)))
                                         (1+ (i<-xy xstart y X Y)) (i<-xy X y X Y)))
                    (xend (if xendy (- xendy (i<-xy 0 y X Y)) X))
@@ -215,7 +216,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
 (def (d3-for-each-adjacent-symbol fun v xstart xend y)
   (with ((vector X Y V) v)
     (def (c gx gy)
-      (let (g (d3get v gx gy))
+      (let (g (xyget v gx gy))
         (when (part-symbol? g)
           (fun g gx gy))))
     (c (1- xstart) y)
@@ -229,7 +230,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
     (d3-for-each-adjacent-symbol (lambda _ (return #t)) v xstart xend y)
     #f))
 (def (day3.1 input)
-  (def v (parse-day3 input))
+  (def v (parse-2d-string input))
   (def sum 0)
   (def (process-num n xstart xend y)
     (when (has-adjacent-symbol? v xstart xend y)
@@ -238,7 +239,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
   sum)
 ;; Day 3 Part 2
 (def (day3.2 input)
-  (def v (parse-day3 input))
+  (def v (parse-2d-string input))
   (def stars (hash))
   (def (process-num n xstart xend y)
     (def (process-symbol g gx gy)
@@ -749,3 +750,104 @@ XXX = (XXX, XXX)")
   (check (day9.2 example) => 2)
   (def sequences (day9-parse input))
   [(day9.1 sequences) (day9.2 sequences)])
+
+;;; DAY 10 https://adventofcode.com/2023/day/10 -- Green's Theorem
+;; Day 10 Part 1
+(def xy+ (case-lambda
+           (() '(0 . 0))
+           ((p) p)
+           ((p0 p1) (with ([x0 . y0] p0) (with ([x1 . y1] p1) (cons (+ x0 x1) (+ y0 y1)))))
+           ((p0 . pr) (foldl xy+ p0 pr))))
+(def xy- (case-lambda
+           ((p) (with ([x . y] p) (cons (- x) (- y))))
+           ((p0 p1) (with ([x0 . y0] p0) (with ([x1 . y1] p1) (cons (- x0 x1) (- y0 y1)))))
+           ((p0 . pr) (xy- p0 (foldl xy+ '(0 . 0) pr)))))
+(def wind-names #(North South East West)) ;; 0 1 2 3
+(def wind-xy #((0 . -1) (0 . 1) (1 . 0) (-1 . 0)))
+(def (-wind wind) (bitwise-xor wind 1))
+(def (pos+wind pos wind) (xy+ pos (vector-ref wind-xy wind)))
+(def pipe-chars "|-LJ7F.S")
+(def pipe-connections #((0 1) (2 3) (0 2) (0 3) (1 3) (1 2) () (0 1 2 3)))
+(def (pget v p) (with ([x . y] p) (xyget v x y)))
+(def (pipe-get v p) (alet (c (pget v p)) (string-index pipe-chars c)))
+(def (has-connection? v pos wind)
+  (alet (pipe (pipe-get v pos))
+    (member wind (vector-ref pipe-connections pipe))))
+(def (find-wind v p winds)
+  (find (lambda (w) (has-connection? v (pos+wind p w) (-wind w))) winds))
+(def (day10.1* v)
+  (with ((vector X Y s) v)
+    (defvalues (x y) (xy<-i (string-index s #\S) X Y))
+    (def pos (cons x y))
+    (def wind (find-wind v pos (iota 4)))
+    ;;(DBG 10100 pos wind)
+    (let loop ((p (pos+wind pos wind)) (from (-wind wind)) (l 1))
+      ;;(DBG 10101 p from l (pget v p))
+      (def pipe (pipe-get v p))
+      (if (equal? pipe 7) ;; #\S
+        (half l)
+        (let (w (find-wind v p (delete from (vector-ref pipe-connections pipe))))
+          (assert! (has-connection? v p from))
+          (assert! w)
+          (loop (pos+wind p w) (-wind w) (1+ l)))))))
+(def (day10* v f)
+  (with ((vector X Y s) v)
+    (defvalues (x y) (xy<-i (string-index s #\S) X Y))
+    (def pos (cons x y))
+    (def wind (find-wind v pos (iota 4)))
+    (let loop ((pos pos) (wind wind) (sum 0))
+      (def s (+ sum (f pos wind)))
+      (def from (-wind wind))
+      (def p (pos+wind pos wind))
+      (def pipe (pipe-get v p))
+      (if (equal? pipe 7) ;; #\S
+        s
+        (let (w (find-wind v p (delete from (vector-ref pipe-connections pipe))))
+          (assert! (has-connection? v p from))
+          (assert! w)
+          (loop p w s))))))
+(def (day10.1 pipes)
+  (half (day10* pipes (lambda (_ _) 1))))
+(def (green-darea pos wind) ;; applying Green's Theorem
+ (with ([x . y] pos) (with ([dx . dy] (vector-ref wind-xy wind)) (- (* x dy) (* y dx)))))
+;; Use Green's Theorem to get the area; it's signed depending on which way you turned, so use abs.
+;; Then remove the space used by the pipes themselves, and add 1 for a dimension 0 fudge term.
+(def (day10.2 pipes)
+  (1+ (half (- (abs (day10* pipes green-darea)) (day10* pipes (lambda (_ _) 1))))))
+;; Day 10 Wrap up
+(def day10-example1 "\
+7-F7-
+.FJ|7
+SJLL7
+|F--J
+LJ.LJ")
+(def day10-example2.1 "\
+...........
+.S-------7.
+.|F-----7|.
+.||.....||.
+.||.....||.
+.|L-7.F-J|.
+.|..|.|..|.
+.L--J.L--J.
+...........")
+(def day10-example2.2 "\
+FF7FSF7F7F7F7F7F---7
+L|LJ||||||||||||F--J
+FL-7LJLJ||||||LJL-77
+F--JF--7||LJLJ7F7FJ-
+L---JF-JLJ.||-FJLJJ7
+|F|F-JF---7F7-L7L|7|
+|FFJF7L7F-JF7|JL---7
+7-L-JL7||F7|L7F-7F7|
+L.L7LFJ|||||FJL7||LJ
+L7JLJL-JLJLJL--JLJ.L")
+(def (day10 (input (day-input-string 10)))
+  (def example1 (parse-2d-string day10-example1))
+  (check (day10.1 example1) => 8)
+  (def example2.1 (parse-2d-string day10-example2.1))
+  (check (day10.2 example2.1) => 4)
+  (def example2.2 (parse-2d-string day10-example2.2))
+  (check (day10.2 example2.2) => 10)
+  (def pipes (parse-2d-string input))
+  [(day10.1 pipes) (day10.2 pipes)])
