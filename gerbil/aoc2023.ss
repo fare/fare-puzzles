@@ -838,7 +838,6 @@ L7JLJL-JLJLJL--JLJ.L")
 
 
 ;;; DAY 11 https://adventofcode.com/2023/day/11 -- L¹ distance and counting
-;; Day 11 Part 1
 (def (sumdistances widths coords)
   (def L (vector-length widths))
   (def conv (make-vector L 0))
@@ -849,7 +848,7 @@ L7JLJL-JLJLJL--JLJ.L")
   (def sc (sort (map (lambda (c) (vector-ref conv c)) coords) <))
   (def N (length sc))
   (foldl (lambda (x i s) (+ s (* x (- (* 2 i) N -1)))) 0 sc (iota N)))
-(def (day11* galaxy age)
+(def (day11* galaxy (age 2))
   (with ((vector X Y s) galaxy)
     (let ((xwidth (make-vector X age))
           (ywidth (make-vector Y age))
@@ -863,8 +862,6 @@ L7JLJL-JLJLJL--JLJ.L")
               (push! (cons x y) stars)))))
       (+ (sumdistances xwidth (map car stars)) ;; L¹ means we can sum the coordinates independently
          (sumdistances ywidth (map cdr stars))))))
-(def (day11.1 galaxy) (day11* galaxy 2))
-(def (day11.2 galaxy) (day11* galaxy 1000000))
 ;; Day 11 Wrap up
 (def day11-example "\
 ...#......
@@ -879,8 +876,138 @@ L7JLJL-JLJLJL--JLJ.L")
 #...#.....")
 (def (day11 (input (day-input-string 11)))
   (def example (parse-2d-string day11-example))
-  (check (day11.1 example) => 374)
+  (check (day11* example) => 374)
   (check (day11* example 10) => 1030)
   (check (day11* example 100) => 8410)
   (def pipes (parse-2d-string input))
-  [(day11.1 pipes) (day11.2 pipes)])
+  [(day11* pipes) (day11* pipes 1000000)])
+
+
+;;; DAY 12 https://adventofcode.com/2023/day/12 -- search within constraints
+(def ll1-d12l
+  (ll1* cons (ll1-begin0 (ll1-char* "?#.") (ll1-char #\space))
+        (ll1-separated ll1-uint (ll1-char #\,) ll1-eolf?)))
+(def parse-d12 (cut ll1/string (cut ll1-lines <> ll1-d12l) <>))
+(def (has-consecutive-dots? line)
+  (let loop ((i (string-length line)))
+    (and (fx>0? i)
+         (let (j (string-index-right line #\. 0 i))
+           (and (fx>0? j)
+                (or (eqv? #\. (string-ref line (fx1- j)))
+                    (loop (- j 2))))))))
+(def (simplify-consecutive-dots line)
+  (if (has-consecutive-dots? line)
+    (with-output (o #f)
+      (def l (string-length line))
+      (let loop ((i 0))
+        (when (and i (< i l))
+          (let (j (string-index line #\. i))
+            (write-substring line i (if j (1+ j) l) o)
+            (when j (let (k (fx1+ j))
+                      (when (< k l) (loop (string-index line (lambda (x) (not (eqv? x #\.))) k)))))))))
+    line))
+(def (combinations n k) (/ (fact n) (* (fact k) (fact (- n k)))))
+(defstruct search-node
+  (result ;; result if done or #f. No reentrancy allowed (or we'd have a separate field)
+   entropy ;; entropy estimate. How much branching over this node is estimated to blow up search.
+   state) ;; state of the search
+  transparent: #t)
+(def (search-done result search) (search-node result (if (zero? result) -1 0) search))
+(def (count-huhs s) (string-count s #\?))
+(def search-cache (hash))
+(def (cached-nodify search) (hash-ensure-ref search-cache search (cut search-nodify search)))
+(def (cached-node entropy search)
+  (hash-ensure-ref search-cache search (cut search-node #f entropy search)))
+(def (simplify-pattern p) (simplify-consecutive-dots (string-trim-both p #\.)))
+(def (wanted-length* wanted) ;; total length of #'s + .'s wanted in line + 1 extra for . if not null
+  (+ (length wanted) (+/list wanted)))
+(def (wanted-length wanted) ;; total length of #'s + .'s wanted in line
+  (if (null? wanted) 0 (1- (wanted-length* wanted))))
+(def (search-nodify search) ;; search-node <- search
+  (with ([s . c] search)
+    (let* ((s (string-trim-both s #\.))
+           (l (string-length s)))
+      (cond
+       ((null? c) (search-done (if (string-index s #\#) 0 1) search))
+       ((zero? l) (search-done 0 search))
+       ((null? (cdr c))
+        (let (k (car c))
+          (cond ((> k l) (search-done 0 search))
+                ((= k l) (search-done (if (string-index s #\.) 0 1) search))
+                (else (cached-node (- l k) [s . c])))))
+       (else
+        (let* ((ls (wanted-length c))
+               (f (min (- l ls) (count-huhs s))))
+          ;;(DBG sn: s c l ls f)
+          (cond
+           ((> ls l) (search-done 0 search))
+           ;; TODO: optimize case ls=l ?
+           (else (cached-node (combinations f (min f (length c))) [s . c])))))))))
+(def (find-best-choice entropy choices)
+  (with ([c . r] choices)
+    (let loop ((min (entropy c)) (best 0) (i 1) (unseen r))
+      (match unseen ([] best)
+             ([a . r] (let (e (entropy a))
+                        (if (< e min) (loop e i (1+ i) r) (loop min best (1+ i) r))))))))
+(def (extract-best-choice entropy choices)
+  (call-with-values (cut split-at choices (find-best-choice entropy choices)) append))
+(def (d12-split s start end before after)
+  (let (l (string-length s))
+    (if (or (and (> start 0) (eqv? #\# (string-ref s (1- start))))
+            (and (< end l) (eqv? #\# (string-ref s end)))
+            (string-index s #\. start end))
+      0
+      (d12-search/count 1
+        [(cached-nodify [(substring s 0 (max 0 (1- start))) . before])
+         (cached-nodify [(substring s (min (1+ end) l) l) . after])]))))
+(def (d12-resolve n)
+  (with ([s . c] (search-node-state n))
+    (def l (string-length s))
+    (cond
+     ((eqv? #\# (string-ref s 0)) (d12-split s 0 (car c) [] (cdr c)))
+     ((eqv? #\# (string-ref s (1- l))) (d12-split s (- l (last c)) l (butlast c) []))
+     (else (let* ((best (find-best-choice - c))
+                  ((values before after*) (split-at c best))
+                  (k (car after*))
+                  (after (cdr after*))
+                  (start (wanted-length* before))
+                  (end (- l k (wanted-length* after) -1)))
+             (if (>= start end)
+               0
+               (+/list (for/collect ((i (in-range start end)))
+                         (d12-split s i (+ i k) before after)))))))))
+(def (d12-examine n) ;; UInt <- SearchNode
+  (or (search-node-result n)
+      (let (r (d12-resolve n))
+        (set! (search-node-result n) r)
+        (set! (search-node-entropy n) (if (zero? r) -1 0))
+        r)))
+(def (d12-search/count factor subsearches) ;; UInt <- UInt (List
+  (if (zero? factor)
+    0
+    (match subsearches
+      ([] factor)
+      (_ (with ([c . r] (extract-best-choice search-node-entropy subsearches))
+           (d12-search/count (* factor (d12-examine c)) r))))))
+(def (d12-possibilities line)
+  (with ([s . c] line) (d12-search/count 1 [(cached-nodify [(simplify-pattern s) . c])])))
+(def (day12.1 lines)
+  (+/list (map d12-possibilities lines)))
+(def (quintiplate line)
+  (with ([s . c] line) (cons (string-join (repeat s 5) "?") (concatenate (repeat c 5)))))
+(def (day12.2 lines)
+  (day12.1 (map quintiplate lines)))
+;; Day 12 Wrap up
+(def day12-example "\
+???.### 1,1,3
+.??..??...?##. 1,1,3
+?#?#?#?#?#?#?#? 1,3,1,6
+????.#...#... 4,1,1
+????.######..#####. 1,6,5
+?###???????? 3,2,1")
+(def (day12 (input (day-input-string 12)))
+  (def example (parse-d12 day12-example))
+  (check (day12.1 example) => 21)
+  (check (day12.2 example) => 525152)
+  (def lines (parse-d12 input))
+  [(day12.1 lines) (day12.2 lines)])
