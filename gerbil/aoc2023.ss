@@ -884,6 +884,12 @@ L7JLJL-JLJLJL--JLJ.L")
 
 
 ;;; DAY 12 https://adventofcode.com/2023/day/12 -- search within constraints
+;; Heuristic optimizations:
+;; 1. cache previous searches (see the search-cache)
+;; 2. simplify away known complexities (initial, final or consecutive dots)
+;; 3. shortcut for failure/impossibility/0 (detect it, have it simplify away other subsearches)
+;; 4. optimize easy cases
+;; 5. heuristic: prioritize lowest entropy choices (subsearch with fewest cases, longest sequence of #)
 (def ll1-d12l
   (ll1* cons (ll1-begin0 (ll1-char* "?#.") (ll1-char #\space))
         (ll1-separated ll1-uint (ll1-char #\,) ll1-eolf?)))
@@ -938,10 +944,8 @@ L7JLJL-JLJLJL--JLJ.L")
        (else
         (let* ((ls (wanted-length c))
                (f (min (- l ls) (count-huhs s))))
-          ;;(DBG sn: s c l ls f)
           (cond
            ((> ls l) (search-done 0 search))
-           ;; TODO: optimize case ls=l ?
            (else (cached-node (combinations f (min f (length c))) [s . c])))))))))
 (def (find-best-choice entropy choices)
   (with ([c . r] choices)
@@ -993,10 +997,10 @@ L7JLJL-JLJLJL--JLJ.L")
   (with ([s . c] line) (d12-search/count 1 [(cached-nodify [(simplify-pattern s) . c])])))
 (def (day12.1 lines)
   (+/list (map d12-possibilities lines)))
-(def (quintiplate line)
+(def (quintuplicate line)
   (with ([s . c] line) (cons (string-join (repeat s 5) "?") (concatenate (repeat c 5)))))
 (def (day12.2 lines)
-  (day12.1 (map quintiplate lines)))
+  (day12.1 (map quintuplicate lines)))
 ;; Day 12 Wrap up
 (def day12-example "\
 ???.### 1,1,3
@@ -1010,4 +1014,4 @@ L7JLJL-JLJLJL--JLJ.L")
   (check (day12.1 example) => 21)
   (check (day12.2 example) => 525152)
   (def lines (parse-d12 input))
-  [(day12.1 lines) (day12.2 lines)])
+  [(day12.1 lines) (day12.2 lines)]) ;; takes ~5s on my laptop
