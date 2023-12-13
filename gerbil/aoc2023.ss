@@ -39,6 +39,7 @@
 
 (def u8vector-ref-set! u8vector-set!)
 (def vector-ref-set! vector-set!)
+(def string-ref-set! string-set!)
 (def (+/list l) (foldl + 0 l))
 
 ;;; DAY 1 https://adventofcode.com/2023/day/1 -- simple string search
@@ -183,7 +184,8 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
 ;;; DAY 3 https://adventofcode.com/2023/day/3 -- iteration over 2d array
 ;; Parser for 2d string array
 (def (parse-2d-string string) ;; : String -> (Vector-Tuple UInt UInt String)
-  (def rows (ll1/string ll1-lines string))
+  (2d-string<-rows (ll1/string ll1-lines string)))
+(def (2d-string<-rows rows) ;; : (List String) -> (Vector-Tuple UInt UInt String)
   (def n-rows (length rows))
   (check-argument-positive-integer n-rows)
   (def n-cols (string-length (first rows)))
@@ -1015,3 +1017,67 @@ L7JLJL-JLJLJL--JLJ.L")
   (check (day12.2 example) => 525152)
   (def lines (parse-d12 input))
   [(day12.1 lines) (day12.2 lines)]) ;; takes ~5s on my laptop
+
+;;; DAY 13 https://adventofcode.com/2023/day/13 -- off-by-one errors
+;; “There are two hard things in computer science: cache invalidation, naming things, and off-by-one errors.”
+(def ll1-d13 (ll1-repeated
+              (ll1-repeated (ll1-begin0 (ll1-char+ ".#") ll1-eolf) ll1-eolf)
+              ll1-eof))
+(def (d13-parse string)
+  (map 2d-string<-rows (ll1/string ll1-d13 string)))
+(def (xyset! v x y c)
+  (with ((vector X Y V) v)
+    (assert! (and (exact-integer? x) (< -1 x X) (exact-integer? y) (< -1 y Y)))
+    (set! (string-ref V (i<-xy x y X Y)) c)))
+(def xyget-set! xyset!)
+(def (transpose-2d-string v)
+  (with ((vector X Y s) v)
+    (def w (vector Y X (make-string (* X Y) #\.)))
+    (for (x (in-range X)) (for (y (in-range Y)) (set! (xyget w y x) (xyget v x y))))
+    w))
+(def (vertical-symmetry? r m (smudges 0))
+  (with ((vector X Y _) m)
+    (let/cc return
+      (unless (<= 1 r (- X 1)) (return #f))
+      (for (x (in-range (min r (- X r))))
+        (for (y (in-range Y))
+          (unless (eqv? (xyget m (- r x 1) y) (xyget m (+ r x) y))
+            (decrement! smudges)
+            (when (negative? smudges) (return #f)))))
+      (zero? smudges))))
+(def (summarize-vertical-symmetry m (smudges 0))
+  (with ((vector X Y _) m)
+    (let/cc return
+      (def (t r) (when (vertical-symmetry? r m smudges) (return r)))
+      (for (r (in-range 1 X)) (t r)) ;; start from top/left
+      0)))
+(def (summarize-symmetry m (smudges 0))
+  (let (x (summarize-vertical-symmetry m smudges))
+    (if (positive? x) x
+        (* 100 (summarize-vertical-symmetry (transpose-2d-string m) smudges)))))
+(def (day13.1 maps)
+  (+/list (map summarize-symmetry maps)))
+(def (day13.2 maps)
+  (+/list (map (cut summarize-symmetry <> 1) maps)))
+(def day13-example "\
+#.##..##.
+..#.##.#.
+##......#
+##......#
+..#.##.#.
+..##..##.
+#.#.##.#.
+
+#...##..#
+#....#..#
+..##..###
+#####.##.
+#####.##.
+..##..###
+#....#..#")
+(def (day13 (input (day-input-string 13)))
+  (def example (d13-parse day13-example))
+  (check (day13.1 example) => 405)
+  (check (day13.2 example) => 400)
+  (def maps (d13-parse input))
+  [(day13.1 maps) (day13.2 maps)]) ;; 36041 35915
