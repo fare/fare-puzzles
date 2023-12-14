@@ -1029,7 +1029,11 @@ L7JLJL-JLJLJL--JLJ.L")
   (with ((vector X Y V) v)
     (check-argument (and (exact-integer? x) (< -1 x X)) "in range" [x X])
     (check-argument (and (exact-integer? y) (< -1 y Y)) "in range" [y Y])
-    (set! (u8vector-ref V (i<-xy x y X Y)) (char->integer c))))
+    (def i (i<-xy x y X Y))
+    (def b (char->integer c))
+    (check-argument (< -1 i (* X Y)) "in range" [i (* X Y)])
+    (check-argument (< -1 b 256) "u8" b)
+    (set! (u8vector-ref V i) b)))
 (def xyget-set! xyset!)
 (def (transpose-2d-string v)
   (with ((vector X Y s) v)
@@ -1084,7 +1088,11 @@ L7JLJL-JLJLJL--JLJ.L")
   [(day13.1 maps) (day13.2 maps)]) ;; 36041 35915
 
 
-;;; DAY 14 https://adventofcode.com/2023/day/14 -- XXX
+;;; DAY 14 https://adventofcode.com/2023/day/14 -- detecting cycles
+;; This is quite redundant with DAY 8 and DAY 13.p
+;; This solution triggered segfaults in Gerbil and/or Gambit;
+;; adding DBG statements, (##gc) forms, and using export GAMBOPT="d5,te"
+;; I eventually reached i=102 (j=93, k=7) without segfault. Still very worrisome.
 (def (tiltN m)
   (with ((vector X Y s) m)
     (def n (vector X Y (u8vector-copy s)))
@@ -1117,12 +1125,14 @@ L7JLJL-JLJLJL--JLJ.L")
 (def (cycle14 m)
   (def (f m) (DBG f1:) (begin0 (rotate-clockwise (tiltN m)) (DBG f2:)))
   (f (f (f (f m)))))
-(def (iterate f n x)
-  (cond ((zero? n) x) (iterate f (1- n) (f x))))
+(def (iterate n f x)
+  (if (zero? n) x (iterate (1- n) f (f x))))
 (def (day14.1 m)
   (loadN (tiltN m)))
+(def d14h (hash))
 (def (day14.2 m)
-  (def h (hash)) ;;(def v (list->evector '()))
+  (set! d14h (hash))
+  (def h d14h) ;; (hash)) ;;(def v (list->evector '()))
   (def N 1000000000)
   (let/cc return
     (let loop ((i 0) (m m))
@@ -1130,9 +1140,10 @@ L7JLJL-JLJLJL--JLJ.L")
       (if (= i N)
         (loadN m)
         (let (j #|(DBG bar:|# (hash-get h m));)
-          (if j (let (k (+ j (modulo (- N i) (- i j))))
-                  ;;(DBG day14.2: i j k (evector-ref v k))
-                  ;;(loadN (evector-ref v k)))
+          (if j (let (k (modulo (- N i) (- i j)))
+                  (DBG day14.2: i j k)
+                  (print-2d-string m) ;; (evector-ref v (+ j k))
+                  ;;(loadN (evector-ref v (+ j k)))
                   (loadN (iterate (modulo (- N i) (- i j)) cycle14 m)))
               (begin
                 ;;(DBG baz:
@@ -1202,6 +1213,7 @@ O..#.OO...
 #...O###.O
 #.OOO#...O")
 (def (day14 (input (day-input-string 14)))
+  ;;(##gc)
   (def example (parse-2d-string day14-example))
   (def example.N (parse-2d-string day14-example.N))
   (check (tiltN example) => example.N)
@@ -1212,6 +1224,9 @@ O..#.OO...
   (check (cycle14 example) => example.1)
   (check (cycle14 example.1) => example.2)
   (check (cycle14 example.2) => example.3)
-  ;;(check (day14.2 example) => 64)
+  ;;(##gc)
+  (check (day14.2 example) => 64)
   (def m (parse-2d-string input))
-  [(day14.1 m) (day14.2 m)])
+  ;;(##gc)
+  [(day14.1 m) (begin (##gc) (day14.2 m))]) ;; 107430 96317
+
