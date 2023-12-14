@@ -1081,3 +1081,130 @@ L7JLJL-JLJLJL--JLJ.L")
   (check (day13.2 example) => 400)
   (def maps (d13-parse input))
   [(day13.1 maps) (day13.2 maps)]) ;; 36041 35915
+
+
+;;; DAY 14 https://adventofcode.com/2023/day/14 -- XXX
+(def (tiltN m)
+  (with ((vector X Y s) m)
+    (def n (vector X Y (string-copy s)))
+    (for (x (in-range X))
+      (for (y (in-range (1- Y)))
+        (when (eqv? #\. (xyget n x y))
+          (let/cc return
+            (for (z (in-range (1+ y) Y))
+              (case (xyget n x z)
+                ((#\O) (xyset! n x y #\O) (xyset! n x z #\.) (return))
+                ((#\#) (return))))))))
+    n))
+(def (loadN m)
+  (with ((vector X Y s) m)
+    (def l 0)
+    (for (x (in-range X))
+      (for (y (in-range Y))
+        (when (eqv? #\O (xyget m x y))
+          (increment! l (- Y y)))))
+    l))
+(def (rotate-clockwise m)
+  (with ((vector X Y s) m)
+    (def n (vector Y X (make-string (* X Y) #\.)))
+    (for (x (in-range X)) (for (y (in-range Y)) (xyset! n (- Y y 1) x (xyget m x y))))
+    n))
+(def (cycle14 m)
+  (def (f m) (rotate-clockwise (tiltN m)))
+  (f (f (f (f m)))))
+(def (iterate f n x)
+  (cond ((zero? n) x) (iterate f (1- n) (f x))))
+(def (day14.1 m)
+  (loadN (tiltN m)))
+(def (day14.2 m)
+  (def h (hash)) (def v (list->evector '()))
+  (def N 1000000000)
+  (let/cc return
+    (let loop ((i 0) (m m))
+      ;;(when (zero? (modulo i 1)) (DBG foo: i) (print-2d-string m))
+      (if (= i N)
+        (loadN m)
+        (let (j #|(DBG bar:|# (hash-get h m));)
+          (if j (let (k (+ j (modulo (- N i) (- i j))))
+                  (DBG day14.2: i j k (evector-ref v k))
+                  (loadN (evector-ref v k)))
+              (begin
+                ;;(DBG baz:
+                     (hash-put! h m i);)
+                ;;(DBG quux:
+                     (evector-push! v m);)
+                (loop (1+ i) (DBG bli: i (cycle14 m))))))))))
+(def (print-2d-string m (port (current-output-port)))
+  (with ((vector X Y s) m)
+    (for (y (in-range Y))
+      (let* ((start (i<-xy 0 y X Y)) (end (+ start X)))
+        (write-substring s start end port) (newline port)))))
+(def day14-example "\
+O....#....
+O.OO#....#
+.....##...
+OO.#O....O
+.O.....O#.
+O.#..O.#.#
+..O..#O..O
+.......O..
+#....###..
+#OO..#....")
+(def day14-example.N "\
+OOOO.#.O..
+OO..#....#
+OO..O##..O
+O..#.OO...
+........#.
+..#....#.#
+..O..#.O.O
+..O.......
+#....###..
+#....#....")
+(def day14-example.1 "\
+.....#....
+....#...O#
+...OO##...
+.OO#......
+.....OOO#.
+.O#...O#.#
+....O#....
+......OOOO
+#...O###..
+#..OO#....")
+(def day14-example.2 "\
+.....#....
+....#...O#
+.....##...
+..O#......
+.....OOO#.
+.O#...O#.#
+....O#...O
+.......OOO
+#..OO###..
+#.OOO#...O")
+(def day14-example.3 "\
+.....#....
+....#...O#
+.....##...
+..O#......
+.....OOO#.
+.O#...O#.#
+....O#...O
+.......OOO
+#...O###.O
+#.OOO#...O")
+(def (day14 (input (day-input-string 14)))
+  (def example (parse-2d-string day14-example))
+  (def example.N (parse-2d-string day14-example.N))
+  (check (tiltN example) => example.N)
+  (check (day14.1 example) => 136)
+  (def example.1 (parse-2d-string day14-example.1))
+  (def example.2 (parse-2d-string day14-example.2))
+  (def example.3 (parse-2d-string day14-example.3))
+  (check (cycle14 example) => example.1)
+  (check (cycle14 example.1) => example.2)
+  (check (cycle14 example.2) => example.3)
+  ;;(check (day14.2 example) => 64)
+  (def m (parse-2d-string input))
+  [(day14.1 m) (day14.2 m)])
