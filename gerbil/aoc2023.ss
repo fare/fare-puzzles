@@ -1,4 +1,5 @@
 ;; Solutions to https://AdventOfCode.com/2023 -*- Gerbil -*-
+(export #t)
 (import
   (for-syntax :std/iter :std/misc/number)
   :gerbil/gambit
@@ -1016,7 +1017,7 @@ L7JLJL-JLJLJL--JLJ.L")
   (check (day12.1 example) => 21)
   (check (day12.2 example) => 525152)
   (def lines (parse-d12 input))
-  [(day12.1 lines) (day12.2 lines)]) ;; takes ~5s on my laptop
+  [(day12.1 lines) (day12.2 lines)]) ;; takes ~5s on my laptop using the interpreter
 
 ;;; DAY 13 https://adventofcode.com/2023/day/13 -- off-by-one errors
 ;; “There are two hard things in computer science: cache invalidation, naming things, and off-by-one errors.”
@@ -1089,10 +1090,12 @@ L7JLJL-JLJLJL--JLJ.L")
 
 
 ;;; DAY 14 https://adventofcode.com/2023/day/14 -- detecting cycles
-;; This is quite redundant with DAY 8 and DAY 13.p
-;; This solution triggered segfaults in Gerbil and/or Gambit;
+;; This is quite redundant with DAY 8 and DAY 13.
+;; This solution triggers segfaults in the Gerbil interpreter,
+;; no problem with the Gerbil compiler or with the Gambit interpreter.
 ;; adding DBG statements, (##gc) forms, and using export GAMBOPT="d5,te"
-;; I eventually reached i=102 (j=93, k=7) without segfault. Still very worrisome.
+;; I eventually reached i=102 (j=93, k=7) without segfault even with the interpreter.
+;; Still very worrisome.
 (def (tiltN m)
   (with ((vector X Y s) m)
     (def n (vector X Y (u8vector-copy s)))
@@ -1114,16 +1117,16 @@ L7JLJL-JLJLJL--JLJ.L")
           (increment! l (- Y y)))))
     l))
 (def (rotate-clockwise m)
-  (DBG rc0:)
+  #;(DBG rc0:)
   (with ((vector X Y s) m)
-    (DBG rc1:)
+    #;(DBG rc1:)
     (def n (vector Y X (make-u8vector (* X Y) 0)))
-    (DBG rc2:)
+    #;(DBG rc2:)
     (for (x (in-range X)) (for (y (in-range Y)) (xyset! n (- Y y 1) x (xyget m x y))))
-    (DBG rc3:)
+    #;(DBG rc3:)
     n))
 (def (cycle14 m)
-  (def (f m) (DBG f1:) (begin0 (rotate-clockwise (tiltN m)) (DBG f2:)))
+  (def (f m) #;(DBG f1:) (begin0 (rotate-clockwise (tiltN m)) #;(DBG f2:)))
   (f (f (f (f m)))))
 (def (iterate n f x)
   (if (zero? n) x (iterate (1- n) f (f x))))
@@ -1141,8 +1144,8 @@ L7JLJL-JLJLJL--JLJ.L")
         (loadN m)
         (let (j #|(DBG bar:|# (hash-get h m));)
           (if j (let (k (modulo (- N i) (- i j)))
-                  (DBG day14.2: i j k)
-                  (print-2d-string m) ;; (evector-ref v (+ j k))
+                  (for-each display ["  day14.2: " i " " j " " k])
+                  ;;(print-2d-string m) ;; (evector-ref v (+ j k))
                   ;;(loadN (evector-ref v (+ j k)))
                   (loadN (iterate (modulo (- N i) (- i j)) cycle14 m)))
               (begin
@@ -1150,7 +1153,7 @@ L7JLJL-JLJLJL--JLJ.L")
                      (hash-put! h m i);)
                 ;;(DBG quux:
                      ;;(evector-push! v m);)
-                (DBG bli: i)
+                (for-each display [" " i])
                 (loop (1+ i) (cycle14 m)))))))))
 (def (print-2d-string m (port (current-output-port)))
   (with ((vector X Y s) m)
@@ -1230,3 +1233,8 @@ O..#.OO...
   ;;(##gc)
   [(day14.1 m) (begin (##gc) (day14.2 m))]) ;; 107430 96317
 
+(def (main . _)
+  (let loop ((i 0))
+    (for-each display "FOO " i " -- ")
+    (write (day14)) (newline)
+    (loop (1+ i))))
