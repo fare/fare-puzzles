@@ -9,6 +9,7 @@
   :std/error
   :std/format
   :std/iter
+  :std/misc/alist
   :std/misc/bytes
   :std/misc/evector
   :std/misc/func
@@ -1216,7 +1217,6 @@ O..#.OO...
 #...O###.O
 #.OOO#...O")
 (def (day14 (input (day-input-string 14)))
-  ;;(##gc)
   (def example (parse-2d-string day14-example))
   (def example.N (parse-2d-string day14-example.N))
   (check (tiltN example) => example.N)
@@ -1227,14 +1227,52 @@ O..#.OO...
   (check (cycle14 example) => example.1)
   (check (cycle14 example.1) => example.2)
   (check (cycle14 example.2) => example.3)
-  ;;(##gc)
   (check (day14.2 example) => 64)
   (def m (parse-2d-string input))
-  ;;(##gc)
-  [(day14.1 m) (begin (##gc) (day14.2 m))]) ;; 107430 96317
+  [(day14.1 m) (day14.2 m)]) ;; 107430 96317
 
-(def (main . _)
-  (let loop ((i 0))
-    (for-each display "FOO " i " -- ")
-    (write (day14)) (newline)
-    (loop (1+ i))))
+;;; DAY 15 https://adventofcode.com/2023/day/15 -- simple 1960s data processing
+(def (h15-u8 byte current-value)
+  (bitwise-and 255 (* (+ current-value byte) 17)))
+(def (h15-u8vector u8v (current-value 0))
+  (for (i (in-range (u8vector-length u8v)))
+    (set! current-value (h15-u8 (u8vector-ref u8v i) current-value)))
+  current-value)
+(def (h15-string string (current-value 0)) (h15-u8vector (string->bytes string)))
+(def (d15.1 initseq)
+  (+/list (map h15-string initseq)))
+(def (d15-parse string) (string-split (string-delete #\newline string) #\,))
+(def (d15-parse-step step)
+  (let* ((i (string-index step (lambda (x) (not (char-ascii-alphabetic? x)))))
+         (label (substring step 0 i))
+         (operation (string-ref step i))
+         (power (and (eqv? operation #\=)
+                     (string->number (substring step (1+ i) (string-length step))))))
+    (values label power)))
+(def (d15-step step boxes)
+  (defvalues (label power) (d15-parse-step step))
+  (def h (h15-string label))
+  (def sym (string->symbol label))
+  (set! (vector-ref boxes h)
+    (if power (asetq (vector-ref boxes h) sym power)
+        (aremq sym (vector-ref boxes h)))))
+(def (d15-init initseq)
+  (def boxes (make-vector 256 '()))
+  (for-each (cut d15-step <> boxes) initseq)
+  boxes)
+(def (d15-box-power i box)
+  (let (l (length box))
+    (* (1+ i) (+/list (map * (map cdr box) (iota l l -1))))))
+(def (d15-power boxes) (+/list (map (lambda (i) (d15-box-power i (vector-ref boxes i))) (iota 256))))
+(def (d15.2 initseq) (d15-power (d15-init initseq)))
+(def d15-example "rn=1,cm-,qp=3,cm=2,qp-,pc=4,ot=9,ab=5,pc-,pc=6,ot=7")
+(def d15-boxes
+  (let (i '(((rn . 1) (cm . 2)) () () ((ot . 7) (ab . 5) (pc . 6))))
+    (list->vector (append (map reverse i) (repeat '() 252)))))
+(def (day15 (input (day-input-string 15)))
+  (def example (d15-parse d15-example))
+  (check (d15.1 example) => 1320)
+  (check (d15-init example) => d15-boxes)
+  (check (d15.2 example) => 145)
+  (def is (d15-parse input))
+  [(d15.1 is) (d15.2 is)]) ;; 512283 (too high 512293 (forgot to remove newline))
