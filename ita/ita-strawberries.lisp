@@ -1259,7 +1259,7 @@ trylisp sbcl ||
 trylisp cmucl ||
 trylisp lisp ||
 trylisp clisp ||
-{ echo "Cannot find lisp implementation." ; exit 42 ; 
+{ echo "Cannot find lisp implementation." ; exit 42 ;
 }
 
 trydir () {

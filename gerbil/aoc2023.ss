@@ -18,6 +18,7 @@
   :std/misc/number
   :std/misc/path
   :std/misc/ports
+  :std/misc/pqueue
   :std/misc/repr
   :std/misc/string
   :std/misc/vector
@@ -204,6 +205,8 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
 (def (xyget v x y)
   (and (xy? v x y) (with ((vector X Y V) v) (u8vector-ref V (i<-xy x y X Y)))))
 (def (xygetc v x y) (alet (i (xyget v x y)) (integer->char i)))
+(def (pget v p) (xyget v (car p) (cdr p)))
+(def (pgetc v p) (xygetc v (car p) (cdr p)))
 ;; Day 3 Iterators -- in lieu of a data structure
 (def (d3-for-each-number fun v)
   (with ((vector X Y V) v)
@@ -1270,6 +1273,9 @@ O..#.OO...
   (check (d15.2 example) => 145)
   (def is (d15-parse input))
   [(d15.1 is) (d15.2 is)]) ;; 512283 (too high 512293 (forgot to remove newline))
+
+
+;;; DAY 16 https://adventofcode.com/2023/day/16 -- warm up for Day 17
 (def d16chars "./\\-|")
 (def d16table
   (list->vector
@@ -1332,5 +1338,103 @@ O..#.OO...
   [(d16.1 m) (d16.2 m)])
 
 
+;;; DAY 17 https://adventofcode.com/2023/day/16 -- A* search (best first search)
+;;; Phase space is position + direction + exactly how long you will go that direction
+(def (A* starts: starts ends: ends +arcs: +arcs -arcs: -arcs) ;; assume cost is real-valued
+  (def +q (make-pqueue car)) ;; queue of forward nodes
+  (def -q (make-pqueue car)) ;; queue of backward nodes
+  (for-each (cut pqueue-push! +q <>) starts)
+  (for-each (cut pqueue-push! -q <>) ends)
+  (def +t (hash)) ;; table of forward states with best cost
+  (def -t (hash)) ;; table of backward nodes with best cost
+  (def best [+inf.0 . #f]) ;; cost to beat (once complete paths have been made)
+  (def mostcost 0) ;; most cost for an arc
+  (def (search queue table -table arcs forward?)
+    (with ([cost state . path] (pqueue-pop! queue))
+      (cond
+       ((hash-get table state) ;; previous path to that state
+        => (lambda (prev) (assert! (<= (car prev) cost)))) ;; best-path first, so previous must be optimal
+       ((hash-get -table state) ;; found a connection!
+        => (match <> ([c . p]
+                      (let (total (+ cost c))
+                        (when (< total (car best))
+                          ;;(DBG FOUND!: 'c cost '-c c 'p path '-p p forward?)
+                          (let (path (append-reverse path p)) ;; NB: state already in p
+                            (set! best [total :: (if forward? path (reverse path))])))))))
+       (else
+        (hash-put! table state [cost state . path])
+        (for (([co . st] (arcs state)))
+          (when (> co mostcost) (set! mostcost co))
+          (pqueue-push! queue [(+ cost co) st state . path]))))))
+  (let loop ()
+    (if (or (pqueue-empty? +q) (pqueue-empty? -q))
+      best
+      (let ((+best (car (pqueue-peek +q)))
+            (-best (car (pqueue-peek -q))))
+        (if (<= (car best) (- (+ +best -best) mostcost))
+          best
+          (begin
+            (if (<= +best -best)
+              (search +q +t -t +arcs #t)
+              (search -q -t +t -arcs #f))
+            (loop)))))))
+(def (right-turn wind) (u8vector-ref #u8(2 3 1 0) wind))
+(def (d17arcs m minsteps maxsteps forward? state)
+  (match state
+    ([wind . pos]
+     (let* ((r (right-turn wind)) (l (-wind r)))
+       (with-list-builder (c)
+         (def (go w)
+           (def d (if forward? w (-wind wind)))
+           (let loop ((cost 0) (pos pos) (steps 1))
+             (when (<= steps maxsteps)
+               (let (p (pos+wind pos d))
+                 (when (xyp? m p)
+                   (let (cost (+ cost (char-ascii-digit (pgetc m (if forward? p pos)))))
+                     (when (>= steps minsteps)
+                       (c [cost w . p]))
+                     (loop cost p (1+ steps))))))))
+         (go r) (go l))))))
+(def (d17* m minsteps maxsteps)
+  (with ((vector X Y _) m)
+    (car (A* starts: '((0 (0 0 . 0)) ;; cost 0 so far, heading North, at NW corner.
+                       (0 (3 0 . 0))) ;; cost 0 so far, heading West, at NW corner.
+             ends: `((0 (1 ,(1- X) . ,(1- Y))) ;; cost 0 so far, heading South, at SE corner.
+                     (0 (2 ,(1- X) . ,(1- Y)))) ;; cost 0 so far, heading East, at SE corner.
+             +arcs: (cut d17arcs m minsteps maxsteps #t <>)
+             -arcs: (cut d17arcs m minsteps maxsteps #f <>)))))
+(def (d17.1 m) (d17* m 1 3))
+(def (d17.2 m) (d17* m 4 10))
+(def d17ex1 "\
+2413432311323
+3215453535623
+3255245654254
+3446585845452
+4546657867536
+1438598798454
+4457876987766
+3637877979653
+4654967986887
+4564679986453
+1224686865563
+2546548887735
+4322674655533")
+(def d17ex2 "\
+111111111111
+999999999991
+999999999991
+999999999991
+999999999991")
+(def (day17 (input (day-input-string 17)))
+  (def ex1 (parse-2d-string d17ex1))
+  (check (d17.1 ex1) => 102)
+  (check (d17.2 ex1) => 94)
+  (def ex2 (parse-2d-string d17ex2))
+  (check (d17.2 ex2) => 71)
+  (def m (parse-2d-string input))
+  [(d17.1 m) (d17.2 m)]) ;; 959 1135
+
 (def (main . _)
   (time (writeln (day17))))
+
+(main)
