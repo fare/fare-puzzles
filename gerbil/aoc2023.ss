@@ -771,14 +771,16 @@ XXX = (XXX, XXX)")
            ((p) (with ([x . y] p) (cons (- x) (- y))))
            ((p0 p1) (with ([x0 . y0] p0) (with ([x1 . y1] p1) (cons (- x0 x1) (- y0 y1)))))
            ((p0 . pr) (xy- p0 (foldl xy+ '(0 . 0) pr)))))
+(def (*xy k xy) (with ([x . y] xy) (cons (* k x) (* k y))))
 (def wind-names #(North South East West)) ;; 0 1 2 3
 (def wind-chars "NSEW") ;; 0 1 2 3
 (def (char->wind c) (string-index wind-chars c))
 (def (winds->bits ws) (+/list (map (cut fxshift 1 <>) ws)))
 (def (bits->winds b) (filter (cut bit-set? <> b) (iota 4)))
 (def wind-xy #((0 . -1) (0 . 1) (1 . 0) (-1 . 0)))
+(def (wind->xy w (n 1)) (*xy n (vector-ref wind-xy w)))
 (def (-wind wind) (bitwise-xor wind 1))
-(def (pos+wind pos wind) (xy+ pos (vector-ref wind-xy wind)))
+(def (pos+wind pos wind (n 1)) (xy+ pos (wind->xy wind n)))
 (def pipe-chars "|-LJ7F.S")
 (def pipe-connections #((0 1) (2 3) (0 2) (0 3) (1 3) (1 2) () (0 1 2 3)))
 (def (pget v p) (with ([x . y] p) (xygetc v x y)))
@@ -806,8 +808,8 @@ XXX = (XXX, XXX)")
           (loop p w s))))))
 (def (day10.1 pipes)
   (half (day10* pipes (lambda (_ _) 1))))
-(def (green-darea pos wind) ;; applying Green's Theorem
- (with ([x . y] pos) (with ([dx . dy] (vector-ref wind-xy wind)) (- (* x dy) (* y dx)))))
+(def (green-darea pos wind (n 1)) ;; applying Green's Theorem
+ (with ([x . y] pos) (with ([dx . dy] (wind->xy wind n)) (- (* x dy) (* y dx)))))
 ;; Use Green's Theorem to get the area; it's signed depending on which way you turned, so use abs.
 ;; Then remove the space used by the pipes themselves, and add 1 for a dimension 0 fudge term.
 (def (day10.2 pipes)
@@ -1338,8 +1340,8 @@ O..#.OO...
   [(d16.1 m) (d16.2 m)])
 
 
-;;; DAY 17 https://adventofcode.com/2023/day/16 -- A* search (best first search)
-;;; Phase space is position + direction + exactly how long you will go that direction
+;;; DAY 17 https://adventofcode.com/2023/day/17 -- A* search (best first search)
+;;; Phase space is (direction . position)
 (def (A* starts: starts ends: ends +arcs: +arcs -arcs: -arcs) ;; assume cost is real-valued
   (def +q (make-pqueue car)) ;; queue of forward nodes
   (def -q (make-pqueue car)) ;; queue of backward nodes
@@ -1349,6 +1351,8 @@ O..#.OO...
   (def -t (hash)) ;; table of backward nodes with best cost
   (def best [+inf.0 . #f]) ;; cost to beat (once complete paths have been made)
   (def mostcost 0) ;; most cost for an arc
+  ;; We could be more precise by instead remembering the least cost
+  ;; to a state *preceding* an active path, but that would require more bookkeeping.
   (def (search queue table -table arcs forward?)
     (with ([cost state . path] (pqueue-pop! queue))
       (cond
@@ -1434,7 +1438,55 @@ O..#.OO...
   (def m (parse-2d-string input))
   [(d17.1 m) (d17.2 m)]) ;; 959 1135
 
+;;; DAY 18 https://adventofcode.com/2023/day/18 -- Green's Theorem, again (see Day 10)
+(def uind-chars "UDRL") ;; 0 1 2 3 ;; NSEW by any other name
+(def ll1-d18line
+  (ll1-list (ll1-begin0 (ll1-char uind-chars) (ll1-string " "))
+            (ll1-begin0 ll1-uint (ll1-string " (#"))
+            (ll1-begin0 (cut ll1-uint <> 16) (ll1-string ")") ll1-eolf)))
+(def (d18parse m) (ll1/string (ll1-repeated ll1-d18line ll1-eof) m))
+(def d18ex1 "\
+R 6 (#70c710)
+D 5 (#0dc571)
+L 2 (#5713f0)
+D 2 (#d2c081)
+R 2 (#59c680)
+D 2 (#411b91)
+L 5 (#8ceee2)
+U 2 (#caa173)
+L 1 (#1b58a2)
+U 2 (#caa171)
+R 2 (#7807d2)
+U 3 (#a77fa3)
+L 2 (#015232)
+U 2 (#7a21e3)")
+(def (d18dim dig)
+  (let loop ((x 0) (y 0) (xmin 0) (xmax 0) (ymin 0) (ymax 0) (dig dig))
+    (match dig
+      ([] [xmin x xmax ymin y ymax])
+      ([[uind n _] . dr]
+       (with ([x1 . y1] (pos+wind [x . y] (string-index uind-chars uind) n))
+         (loop x1 y1 (min x1 xmin) (max x1 xmax) (min y1 ymin) (max y1 ymax) dr))))))
+(def (d18* dig decode)
+  (let loop ((p [0 . 0]) (l 0) (a 0) (d (map decode dig)))
+    (match d
+      ([] (assert! (equal? p [0 . 0]))
+       (1+ (half (+ (abs a) l))))
+      ([[wind . n] . dr]
+       (loop (pos+wind p wind n) (+ l n) (+ a (green-darea p wind n)) dr)))))
+(def (d18.1 dig)
+  (d18* dig (match <> ([uind n _] (cons (string-index uind-chars uind) n)))))
+(def (d18.2 dig)
+  (d18* dig (match <> ([_ _ x] (cons (vector-ref #(2 1 3 0) (fxand x 3)) (fxshift x -4))))))
+(def (day18 (input (day-input-string 18)))
+  (def ex1 (d18parse d18ex1))
+  (check (d18.1 ex1) => 62)
+  (check (d18.2 ex1) => 952408144115)
+  (def dig (d18parse input))
+  [(d18.1 dig) (d18.2 dig)])
+
 (def (main . _)
-  (time (writeln (day17))))
+  ;(time
+  (writeln (day18)));)
 
 (main)
