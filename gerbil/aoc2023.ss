@@ -34,8 +34,10 @@
   :std/text/basic-printers
   :std/text/char-set
   :clan/astar
+  (only-in :clan/base nest)
   :clan/memo
-  :clan/order)
+  :clan/order
+  :clan/pure/dict/symdict)
 
 ;;; General purpose utilities
 (def (day-input-file n) (subpath (this-source-directory) (format "data/aoc2023-~d.input" n)))
@@ -784,8 +786,7 @@ XXX = (XXX, XXX)")
 (def (pos+wind pos wind (n 1)) (xy+ pos (wind->xy wind n)))
 (def pipe-chars "|-LJ7F.S")
 (def pipe-connections #((0 1) (2 3) (0 2) (0 3) (1 3) (1 2) () (0 1 2 3)))
-(def (pget v p) (with ([x . y] p) (xygetc v x y)))
-(def (pipe-get v p) (alet (c (pget v p)) (string-index pipe-chars c)))
+(def (pipe-get v p) (alet (c (pgetc v p)) (string-index pipe-chars c)))
 (def (has-connection? v pos wind)
   (alet (pipe (pipe-get v pos))
     (member wind (vector-ref pipe-connections pipe))))
@@ -1406,21 +1407,6 @@ O..#.OO...
             (ll1-begin0 ll1-uint (ll1-string " (#"))
             (ll1-begin0 (cut ll1-uint <> 16) (ll1-string ")") ll1-eolf)))
 (def (d18parse m) (ll1/string (ll1-repeated ll1-d18line ll1-eof) m))
-(def d18ex1 "\
-R 6 (#70c710)
-D 5 (#0dc571)
-L 2 (#5713f0)
-D 2 (#d2c081)
-R 2 (#59c680)
-D 2 (#411b91)
-L 5 (#8ceee2)
-U 2 (#caa173)
-L 1 (#1b58a2)
-U 2 (#caa171)
-R 2 (#7807d2)
-U 3 (#a77fa3)
-L 2 (#015232)
-U 2 (#7a21e3)")
 (def (d18dim dig)
   (let loop ((x 0) (y 0) (xmin 0) (xmax 0) (ymin 0) (ymax 0) (dig dig))
     (match dig
@@ -1439,6 +1425,21 @@ U 2 (#7a21e3)")
   (d18* dig (match <> ([uind n _] (cons (string-index uind-chars uind) n)))))
 (def (d18.2 dig)
   (d18* dig (match <> ([_ _ x] (cons (vector-ref #(2 1 3 0) (fxand x 3)) (fxshift x -4))))))
+(def d18ex1 "\
+R 6 (#70c710)
+D 5 (#0dc571)
+L 2 (#5713f0)
+D 2 (#d2c081)
+R 2 (#59c680)
+D 2 (#411b91)
+L 5 (#8ceee2)
+U 2 (#caa173)
+L 1 (#1b58a2)
+U 2 (#caa171)
+R 2 (#7807d2)
+U 3 (#a77fa3)
+L 2 (#015232)
+U 2 (#7a21e3)")
 (def (day18 (input (day-input-string 18)))
   (def ex1 (d18parse d18ex1))
   (check (d18.1 ex1) => 62)
@@ -1446,8 +1447,108 @@ U 2 (#7a21e3)")
   (def dig (d18parse input))
   [(d18.1 dig) (d18.2 dig)])
 
+;;; DAY 19 https://adventofcode.com/2023/day/19 -- Trivial Packet Routing Language Interpreter and Analysis
+(def ll1-sym (ll1* make-symbol (ll1-char+ char-ascii-alphabetic?)))
+(def (xmas->i c) (case c ((x) 0) ((m) 1) ((a) 2) ((s) 3)))
+(def ll1-d19action
+  (ll1* (lambda (sym more) (match more (#f sym)
+                             ([cmp val rule] (list (xmas->i sym) cmp val rule))))
+        ll1-sym
+        (ll1-or (ll1-begin (ll1-peek #\}) (ll1-pure #f))
+                (ll1-list (ll1* make-symbol (ll1-char "<>")) ll1-uint
+                          (ll1-begin (ll1-string ":") ll1-sym)))))
+(def ll1-d19rule
+  (ll1* (lambda (name actions) (list name (butlast actions) (last actions)))
+        (ll1-begin0 ll1-sym (ll1-string "{"))
+        (ll1-separated ll1-d19action (ll1-string ",") (ll1-string "}\n"))))
+(def ll1-d19pkt
+  (ll1* vector (ll1-begin (ll1-string "{x=") ll1-uint)
+        (ll1-begin (ll1-string ",m=") ll1-uint)
+        (ll1-begin (ll1-string ",a=") ll1-uint)
+        (ll1-begin (ll1-string ",s=") (ll1-begin0 ll1-uint (ll1-string "}") ll1-eolf))))
+(def ll1-d19
+  (ll1* cons (ll1* list->hash-table (ll1-repeated ll1-d19rule ll1-eol))
+        (ll1-repeated ll1-d19pkt ll1-eof)))
+(def (d19parse p) (ll1/string ll1-d19 p))
+;; Day 19 Part 1
+(def (comparator cmp) (case cmp ((<) <) ((>) >)))
+(def (d19run rules pkt)
+  (let runrule ((rule 'in))
+    (case rule
+      ((A) (+/list (vector->list pkt)))
+      ((R) 0)
+      (else (with ([actions fallback] (hash-get rules rule))
+              (let runaction ((as actions))
+                (match as ([] (runrule fallback))
+                       ([[xmas cmp val r] . ar]
+                        (if ((comparator cmp) (vector-ref pkt xmas) val)
+                          (runrule r) (runaction ar))))))))))
+(def (d19.1 rp)
+  (with ([rules . pkts] rp) (+/list (map (cut d19run rules <>) pkts))))
+;; Day 19 Part 2
+(def (hc-size hypercube)
+  (vector-fold * 1 (vector-map (cut apply - <>) hypercube)))
+(def (hc-split xmas cmp val hc)
+  (case cmp
+    ((>) (let-values (((lo hi) (hc-split xmas '< (1+ val) hc))) (values hi lo)))
+    ((<) (with ([start end] (vector-ref hc xmas))
+           (cond ((<= val start) (values #f hc))
+                 ((<= end val) (values hc #f))
+                 (else (values (##vector-set hc xmas [start val])
+                               (##vector-set hc xmas [val end]))))))))
+(def (d19count rules hypercube)
+  (def count 0)
+  (let count/rule ((rule 'in) (hc hypercube) (path '()) (visited empty-symdict))
+    #;(DBG dcr: rule hc path)
+    (if (symdict-has-key? visited rule)
+      (DBG d19-circularity: hc path) ;; are we being tricked with cases of non-termination?
+      (case rule
+        ((A) #;(DBG accept: hc path) (increment! count (hc-size hc)))
+        ((R) #;(DBG reject: hc path) (void))
+        (else
+         (let ((path* (cons rule path)) (visited* (symdict-put visited rule #t)))
+           (with ([actions fallback] (hash-get rules rule))
+             (let count/action ((as actions) (hc hc))
+               #;(DBG dca: rule as fallback hc path)
+               (match as ([] (count/rule fallback hc path* visited*))
+                      ([[xmas cmp val r] . ar]
+                       (let-values (((yes no) (hc-split xmas cmp val hc)))
+                         (when yes (count/rule r yes path* visited*))
+                         (when no (count/action ar no))))))))))))
+  count)
+(def (d19.2 rp)
+  (with ([rules . _] rp) (d19count rules (let (i [1 4001]) (vector i i i i)))))
+(def d19ex "\
+px{a<2006:qkq,m>2090:A,rfg}
+pv{a>1716:R,A}
+lnx{m>1548:A,A}
+rfg{s<537:gd,x>2440:R,A}
+qs{s>3448:A,lnx}
+qkq{x<1416:A,crn}
+crn{x>2662:A,R}
+in{s<1351:px,qqz}
+qqz{s>2770:qs,m<1801:hdj,R}
+gd{a>3333:R,R}
+hdj{m>838:A,pv}
+
+{x=787,m=2655,a=1222,s=2876}
+{x=1679,m=44,a=2067,s=496}
+{x=2036,m=264,a=79,s=2244}
+{x=2461,m=1339,a=466,s=291}
+{x=2127,m=1623,a=2188,s=1013}")
+(def (day19 (input (day-input-string 19)))
+  (def ex (d19parse d19ex))
+  (check (d19.1 ex) => 19114)
+  (check (d19.2 ex) => 167409079868000)
+  (def rp (d19parse input))
+  [(d19.1 rp) (d19.2 rp)])
+
 (def (main . _)
-  ;(time
-  (writeln (day18)));)
+  (nest
+   ;; (time)
+   (writeln)
+   #;(let (r (PeekableStringReader (open-buffered-string-reader d19ex)))
+       (try (ll1-d19rule r) (catch (e) (displayln e) ((ll1-char* char?) r))))
+   (day19)))
 
 (main)
