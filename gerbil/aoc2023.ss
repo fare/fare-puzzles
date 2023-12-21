@@ -19,6 +19,7 @@
   :std/misc/path
   :std/misc/ports
   :std/misc/pqueue
+  :std/misc/queue
   :std/misc/repr
   :std/misc/string
   :std/misc/vector
@@ -33,6 +34,7 @@
   :std/test
   :std/text/basic-printers
   :std/text/char-set
+  :std/values
   :clan/astar
   (only-in :clan/base nest)
   :clan/memo
@@ -47,6 +49,9 @@
 (def vector-ref-set! vector-set!)
 (def string-ref-set! string-set!)
 (def (+/list l) (foldl + 0 l))
+(def (*vector k v) (vector-map (cut * k <>) v))
+(def (vector+ . vs) (apply vector-map + vs))
+(def (vector- . vs) (apply vector-map - vs))
 
 ;;; DAY 1 https://adventofcode.com/2023/day/1 -- simple string search
 (def digit-names #("zero" "one" "two" "three" "four" "five" "six" "seven" "eight" "nine"))
@@ -1543,12 +1548,201 @@ hdj{m>838:A,pv}
   (def rp (d19parse input))
   [(d19.1 rp) (d19.2 rp)])
 
+;;; DAY 20 https://adventofcode.com/2023/day/20 -- Trivial Packet Routing Language Interpreter and Analysis
+;; high is 0, low is 1.
+;; % are flip flops. ignore high (0) inputs, flips on low (1)
+;; (initially off (1), sending high output (0) on low input (1);
+;; then on (0), sending low output (1) on low (1) input)
+;; & are conjunctions, remembers each input, low initial state (1), after each pulse, issues NOR of updated state
+;; broadcaster sends a copy of its input to all outputs
+;; button sends low (1) to broadcaster
+(def ll1-d20pattern
+  (ll1-list (ll1-case ("%&" (ll1-char true)) (else (ll1-pure #\=))) ll1-sym))
+(def ll1-d20module
+  (ll1* cons ll1-d20pattern
+        (ll1-begin (ll1-string " -> ")
+                   (ll1-separated ll1-sym (ll1-string ", ") ll1-eolf))))
+(def ll1-d20 (ll1-repeated ll1-d20module ll1-eof))
+(def (d20parse p)
+  (map (match <> ([[type module] . outs] [module type . outs]))
+       (ll1/string ll1-d20 p)))
+;; Day 20 Part 1
+(defstruct module (name index type in-modules out-modules in-vars out-vars) transparent: #t)
+(def (module-state-size m)
+  (case (module-type m) ((#\=) 0) ((#\%) 1) ((#\&) (vector-length (module-in-modules m)))))
+(def (d20prepare circuit)
+  ;;(DBG 20000 circuit)
+  (def h (list->hash-table circuit))
+  (def c (list->evector '()))
+  (def q (make-queue))
+  (def by-name (hash))
+  (def (name->index name) (if-let (m (hash-get by-name name)) (module-index m) -1))
+  (def (register-module name)
+    (alet (tos (hash-get h name))
+      (with ([type . outputs] tos)
+        (def i (evector-fill-pointer c))
+        (def m (module name i type '() outputs #f #f))
+        (evector-push! c m)
+        (for-each (lambda (o) (enqueue! q [name . o])) outputs)
+        m)))
+  ;;(DBG 20100 h)
+  (enqueue! q '(#f . broadcaster))
+  (until (queue-empty? q)
+    (with ([sender . recipient] (dequeue! q))
+      (def m (hash-ensure-ref by-name recipient (cut register-module recipient)))
+      (when (and sender m) (push! sender (module-in-modules m)))))
+  (def ms (evector->vector c))
+  ;;(DBG 20200 ms)
+  (def v 0) ;; index of bits for state variables
+  (vector-for-each (lambda (m)
+                     (def i (module-index m))
+                     (set! (module-in-modules m)
+                       (list->vector (sort (map name->index (module-in-modules m)) <)))
+                     (set! (module-in-vars m) (post-increment! v (module-state-size m)))
+                     (set! (module-out-modules m)
+                       (list->vector (map name->index (module-out-modules m))))
+                     (for-each (lambda (j) (DBG circularity: 'sender (module-name (vector-ref ms j))
+                                           'recipient (module-name m)))
+                               (filter (cut > <> i) (vector->list (module-in-modules m)))))
+                   ms)
+  ;;(DBG 20300 ms)
+  (vector-for-each (lambda (m)
+                     (def i (module-index m))
+                     ;;(DBG 20350 m)
+                     (set! (module-out-vars m)
+                       (vector-map
+                        (lambda (o)
+                          ;;(DBG 20355 o)
+                          (if (= o -1) -1
+                              (let (r (vector-ref ms o))
+                                (if (eqv? (module-type r) #\&)
+                                  (+ (module-in-vars r)
+                                     (vector-least-index (cut <= i <>) (module-in-modules r)))
+                                  -1))))
+                        (module-out-modules m))))
+                   ms)
+  [v ms])
+(def low-pulse 1)
+(def high-pulse 0)
+(def (low-pulse? hl) (= hl 1))
+(def (high-pulse? hl) (= hl 0))
+(def (pulse-not hl) (- 1 hl))
+(def flipflop-off? low-pulse?)
+(def flipflop-on? high-pulse?)
+(def flipflop-off low-pulse)
+(def flipflop-on high-pulse)
+(def flipflop-toggle pulse-not)
+(def (d20run ms state (counts (vector 0 0)))
+  (def q (make-queue))
+  (def (signal hl mm vv)
+    (enqueue! q (vector hl mm vv))
+    (increment! (vector-ref counts hl)))
+  (signal low-pulse 0 -1) ;; push the button!
+  (until (queue-empty? q)
+    (with ((vector hl mi vi) (dequeue! q)) ;; hi/lo signal, module index, state var index (or -1)
+      ;;(DBG r0: hl mi vi)
+      (unless (= mi -1)
+        (let (m (vector-ref ms mi))
+          ;;(DBG r1: m)
+          (def (send ss)
+            (vector-for-each (cut signal ss <> <>)
+                             (module-out-modules m) (module-out-vars m)))
+          (case (module-type m)
+            ((#\=) (send hl))
+            ((#\%) (when (low-pulse? hl) ;; 1 is low
+                     (let* ((v (module-in-vars m))
+                            (old (ebits-ref state v)) ;; 1 is off
+                            (new (flipflop-toggle old)))
+                       (ebits-set! state v new)
+                       (send (if (flipflop-off? old) high-pulse low-pulse)))))
+             ((#\&) (ebits-set! state vi hl)
+              (let (allhigh? (andmap (lambda (i) (high-pulse? (ebits-ref state i)))
+                                     (iota (module-state-size m) (module-in-vars m))))
+                (send (if allhigh? low-pulse high-pulse)))))))))
+  ;;(newline)(show-state ms (first-value (ebits->bits state)))
+  (cons counts state))
+(def (show-state ms bits)
+  ;;(DBG foo: bits)
+  (def stateful (filter (lambda (m) (positive? (module-state-size m))) (vector->list ms)))
+  (def last-i (module-index (last stateful)))
+  (def names (map (compose as-string module-name) stateful))
+  (def len (reduce max 0 (map string-length names)))
+  (def v (foldl + 0 (map module-state-size stateful)))
+  (for (i (iota len))
+    (!> (with-output (o #f)
+          (for-each (lambda (n m)
+                      (display (if (< i (string-length n)) (string-ref n i) #\space) o)
+                      (let (r (1- (module-state-size m)))
+                        (when (positive? r)
+                          (display (make-string r #\space) o))))
+                    names stateful))
+        (cut string-trim-right <> #\space)
+        display)
+    (newline))
+  (for (j (iota v))
+    (display (if (bit-set? j bits) #\- #\+)))
+  (newline))
+
+(def (d20run* circuit (N 1000))
+  (with ([v ms] (d20prepare circuit))
+    ;;(DBG d20.1: v ms)
+    (def state (bits->ebits -1 v)) ;; start all low / off
+    (def counts (vector 0 0))
+    (def countss (list->evector []))
+    (def states (list->evector []))
+    (def cache (hash))
+    ;;(show-state ms -1)
+    (let/cc return
+      (for ((i (iota N 0)))
+        (let (bits (first-value (ebits->bits state)))
+          ;;(DBG d20run*A: i counts bits)
+          (alet (j (hash-get cache bits))
+            (let (k (+ (modulo (- N i) (- i j)) j))
+              (return
+               (cons
+                (DBG d20run*X: i 'ic counts j 'jc (evector-ref countss j) k 'kc (evector-ref countss k) 'Nc
+                (vector+ counts
+                         (evector-ref countss k)
+                         (*vector (floor-quotient (- N i) (- i j))
+                                  (vector- counts (evector-ref countss j)))))
+                     (evector-ref states k)))))
+          (evector-push! countss (vector-copy counts))
+          (evector-push! states bits)
+          (hash-put! cache bits i)
+          (d20run ms state counts)))
+      (DBG d20run*F: counts)
+      (cons counts (first-value (ebits->bits state))))))
+(def (d20.1 circuit)
+  (with ([(vector h l) . _] (d20run* circuit 1000)) (* h l)))
+;; Day 20 Part 2
+(def d20ex1 "\
+broadcaster -> a, b, c
+%a -> b
+%b -> c
+%c -> inv
+&inv -> a")
+(def d20ex2 "\
+broadcaster -> a
+%a -> inv, con
+&inv -> b
+%b -> con
+&con -> output")
+(def (day20 (input (day-input-string 20)))
+  (def ex1 (d20parse d20ex1))
+  (def ex2 (d20parse d20ex2))
+  (check (d20.1 ex1) => 32000000)
+  (check (d20.1 ex2) => 11687500)
+  #;(check (d20.2 ex1) => x)
+  (def circuit (d20parse input))
+  (d20.1 circuit)
+  #;[(d20.1 circuit) #;(d20.2 circuit)])
+
 (def (main . _)
   (nest
    ;; (time)
    (writeln)
-   #;(let (r (PeekableStringReader (open-buffered-string-reader d19ex)))
-       (try (ll1-d19rule r) (catch (e) (displayln e) ((ll1-char* char?) r))))
-   (day19)))
+   #;(let (r (PeekableStringReader (open-buffered-string-reader d20ex)))
+       (try (ll1-d20rule r) (catch (e) (displayln e) ((ll1-char* char?) r))))
+   (day20)))
 
 (main)
