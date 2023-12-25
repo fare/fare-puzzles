@@ -2,46 +2,54 @@
 (export #t)
 (import
   (for-syntax :std/iter :std/misc/number)
-  :gerbil/gambit
-  :std/assert
-  :std/contract
-  :std/debug/DBG
-  :std/error
-  :std/format
-  :std/iter
-  :std/misc/alist
-  :std/misc/bytes
-  :std/misc/dag
-  :std/misc/evector
-  :std/misc/func
-  :std/misc/hash
-  :std/misc/list
-  :std/misc/number
-  :std/misc/path
-  :std/misc/ports
-  :std/misc/pqueue
-  :std/misc/queue
-  :std/misc/repr
-  :std/misc/string
-  :std/misc/vector
-  :std/parser/ll1
-  :std/sort
-  :std/source
-  :std/srfi/1 ; lists
-  :std/srfi/13 ; strings
-  :std/srfi/14 ; char-set
-  :std/srfi/133 ; vectors
-  :std/srfi/141 ; integer division
-  :std/sugar
-  :std/test
-  :std/text/basic-printers
-  :std/text/char-set
-  :std/values
+  (only-in :gerbil/gambit time integer-sqrt
+           bit-count first-set-bit fxfirst-set-bit extract-bit-field bit-set?)
+  (only-in :std/assert assert!)
+  (only-in :std/debug/DBG DBG)
+  (only-in :std/error check-argument)
+  (only-in :std/format format)
+  (only-in :std/iter for for/collect for/fold in-range)
+  (only-in :std/misc/alist asetq aremq)
+  (only-in :std/misc/dag walk-dag)
+  (only-in :std/misc/evector
+           list->evector evector->list evector->vector
+           evector-ref evector-push! evector-fill-pointer
+           ebits->bits bits->ebits ebits-ref ebits-set! memoize-recursive-sequence)
+  (only-in :std/misc/func compose repeat)
+  (only-in :std/misc/hash hash-ensure-ref hash-ensure-modify! invert-hash<-vector)
+  (only-in :std/misc/list push! length=n? length>n? when/list butlast)
+  (only-in :std/misc/list-builder with-list-builder)
+  (only-in :std/misc/number increment! post-increment! decrement! half bezout
+           check-argument-uint check-argument-positive-integer uint-of-length? xmin/list)
+  (only-in :std/misc/path subpath)
+  (only-in :std/misc/ports writeln with-output read-file-string)
+  (only-in :std/misc/pqueue make-pqueue pqueue-empty? pqueue-push! pqueue-pop!)
+  (only-in :std/misc/queue make-queue enqueue! dequeue! queue-empty?)
+  (only-in :std/misc/vector vector-least-index)
+  (only-in :std/parser/ll1 ll1/string ll1-begin ll1-begin0 ll1-bind ll1-pure ll1-result
+           ll1-char ll1-char* ll1-char+ ll1-string ll1-skip-space* ll1-n-chars
+           ll1-repeated ll1-separated ll1-lines ll1-eof ll1-eol ll1-eolf ll1-eolf?
+           ll1-list ll1* ll1-uint ll1-sint ll1-case ll1-or ll1-peek)
+  (only-in :std/sort sort)
+  (only-in :std/source this-source-directory)
+  (only-in :std/srfi/1 reduce concatenate split-at delete partition first second
+           take take-while span append-map lset-intersection)
+  (only-in :std/srfi/13 string-trim-right string-trim-both string-count string-delete
+           string-index-right string-index string-reverse string-suffix? string-prefix?
+           string-filter) ; strings
+  (only-in :std/srfi/14 char-set? char-set-contains?) ; char-set
+  (only-in :std/srfi/133 vector-count vector-fold vector-index) ; vectors
+  (only-in :std/srfi/141 floor-quotient floor/ ceiling-quotient) ; integer division
+  (only-in :std/sugar defrule if-let hash until ignore-errors)
+  (only-in :std/test check)
+  (only-in :std/text/char-set char-ascii-alphabetic? char-ascii-alphanumeric?
+           codepoint-ascii-digit char-ascii-digit digit-char)
+  (only-in :std/values first-value list->values vector->values)
   (only-in :clan/astar A* A*2)
   (only-in :clan/base nest !>)
   (only-in :clan/memo define-memo-function)
-  :clan/order
-  :clan/pure/dict/symdict)
+  (only-in :clan/order lexicographic<?)
+  (only-in :clan/pure/dict/symdict empty-symdict symdict-has-key? symdict-put))
 
 ;;; General purpose utilities
 (def (day-input-file n) (subpath (this-source-directory) (format "data/aoc2023-~d.input" n)))
@@ -89,8 +97,8 @@
       u8vector-index criterion))))
 (defrule (fxbit-clear bit bitmask) (##fxandc2 bitmask (fxshift 1 bit)))
 (defrule (fxbit-set bit bitmask) (##fxior bitmask (fxshift 1 bit)))
-(def (bit-clear bit bitmask) (bit-field-clear bitmask bit (1+ bit)))
-(def (bit-set bit bitmask) (bit-field-set bitmask bit (1+ bit)))
+(def (bit-clear bit bitmask) (##bit-field-clear bitmask bit (1+ bit)))
+(def (bit-set bit bitmask) (##bit-field-set bitmask bit (1+ bit)))
 
 ;;; DAY 1 https://adventofcode.com/2023/day/1 -- simple string search
 (def digit-names #("zero" "one" "two" "three" "four" "five" "six" "seven" "eight" "nine"))
@@ -2036,7 +2044,7 @@ broadcaster -> a
          ((andmap (lambda (s) (bit-set? s disintegrated*)) (vector-ref nsup target)) ;; chain reaction!
           (let (dis (bitwise-ior disintegrated* (vector-ref disintegrated target)))
             (loop dis
-                  (bitwise-andc1 dis (bitwise-ior weakened* (vector-ref weakened target)))
+                  (##bitwise-andc1 dis (bitwise-ior weakened* (vector-ref weakened target)))
                   target)))
          (else
           (loop disintegrated*
@@ -2162,13 +2170,12 @@ broadcaster -> a
 #####################.#")
 (def (day23 (input (day-input-string 23)))
   (def ex (d23parse d23ex))
-  ;;(check (d23.1 ex) => 5)
+  (check (d23.1 ex) => 94)
   (def m (d23parse input))
-  ;;[(d23.1 m) #;(d23.2 m)]
-  [(d23.1 ex) (d23.1 m)])
+  [(d23.1 m)]) ;; 2030
 
 
-;;; DAY 24 https://adventofcode.com/2424/day/24 -- Intersections
+;;; DAY 24 https://adventofcode.com/2424/day/24 -- Inverting 2x2 matrices
 (def ll1-d24hailstone
   (ll1-list (ll1-begin0 ll1-uint (ll1-string ",") (ll1-char* " "))
             (ll1-begin0 ll1-uint (ll1-string ",") (ll1-char* " "))
@@ -2188,16 +2195,17 @@ broadcaster -> a
       ;; t1 = (-vy2*(x20-x10) + vx2*(y20-y10))/d
       ;; t2 = (-vy1*(x20-x10) + vx1*(y20-y10))/d
       (let/cc return
+        (defrule (fail) (return #f))
         (let* ((d (- (* vy1 vx2) (* vx1 vy2)))
-               (_d (when (zero? d) (return #f)))
+               (_d (when (zero? d) (fail)))
                (t1 (/ (+ (* vy2 (- x10 x20)) (* vx2 (- y20 y10))) d))
-               (_t1 (when (negative? t1) (return #f)))
+               (_t1 (when (negative? t1) (fail)))
                (t2 (/ (+ (* vy1 (- x10 x20)) (* vx1 (- y20 y10))) d))
-               (_t2 (when (negative? t2) (return #f)))
+               (_t2 (when (negative? t2) (fail)))
                (x (+ x10 (* vx1 t1)))
-               (_x (unless (<= minXY x maxXY) (return #f)))
+               (_x (unless (<= minXY x maxXY) (fail)))
                (y (+ y10 (* vy1 t1)))
-               (_y (unless (<= minXY y maxXY) (return #f)))
+               (_y (unless (<= minXY y maxXY) (fail)))
                #;(_ (DBG hi: hail1 hail2 d t1 t2 x y)))
           #t)))))
 (def (d24.1 hail (minXY 200000000000000) (maxXY 400000000000000))
