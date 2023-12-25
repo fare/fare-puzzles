@@ -28,6 +28,7 @@
   :std/source
   :std/srfi/1 ; lists
   :std/srfi/13 ; strings
+  :std/srfi/14 ; char-set
   :std/srfi/133 ; vectors
   :std/srfi/141 ; integer division
   :std/sugar
@@ -35,9 +36,9 @@
   :std/text/basic-printers
   :std/text/char-set
   :std/values
-  :clan/astar
-  (only-in :clan/base nest)
-  :clan/memo
+  (only-in :clan/astar A* A*2)
+  (only-in :clan/base nest !>)
+  (only-in :clan/memo define-memo-function)
   :clan/order
   :clan/pure/dict/symdict)
 
@@ -52,6 +53,41 @@
 (def (*vector k v) (vector-map (cut * k <>) v))
 (def (vector+ . vs) (apply vector-map + vs))
 (def (vector- . vs) (apply vector-map - vs))
+(defrule (pushnew! element list opts ...)
+  (unless (member* element list opts ...)
+    (set! list (cons element list))))
+(def (member* element list key: (key #f) test: (test #f) test-not: (test-not #f))
+  (if (or key test test-not)
+    (let* ((test (or test (and test-not (lambda (x y) (not (test-not x y)))) equal?))
+           (key (or key identity))
+           (pred (lambda (x) (test element (key x)))))
+      (let loop ((l list)) (match l ([] #f) ([h . t] (if (pred h) l (loop t))))))
+    (member element list)))
+(def (u8vector-index u8v criterion (start 0) (end (u8vector-length u8v)))
+  (cond
+   ((uint-of-length? criterion 8)
+    (let lp ((i start))
+      (and (< i end)
+           (if (= criterion (u8vector-ref u8v i)) i
+               (lp (+ i 1))))))
+   ((char? criterion)
+    (u8vector-index u8v (char->integer criterion) start end))
+   ((char-set? criterion)
+    (let lp ((i start))
+      (and (< i end)
+           (alet (c (ignore-errors (integer->char criterion)))
+             (if (char-set-contains? c (u8vector-ref u8v i)) i
+                 (lp (+ i 1)))))))
+   ((procedure? criterion)
+    (let lp ((i start))
+      (and (< i end)
+           (if (criterion (u8vector-ref u8v i)) i
+               (lp (+ i 1))))))
+   (else
+    (error "Second param is neither byte, char-set, char, or predicate procedure."
+      u8vector-index criterion))))
+(defrule (fxbit-clear bit bitmask) (##fxandc2 bitmask (fxshift 1 bit)))
+(defrule (fxbit-set bit bitmask) (##fxior bitmask (fxshift 1 bit)))
 
 ;;; DAY 1 https://adventofcode.com/2023/day/1 -- simple string search
 (def digit-names #("zero" "one" "two" "three" "four" "five" "six" "seven" "eight" "nine"))
@@ -194,27 +230,31 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
 
 ;;; DAY 3 https://adventofcode.com/2023/day/3 -- iteration over 2d array
 ;; Parser for 2d string array
-(def (parse-2d-string string) ;; : String -> (Vector-Tuple UInt UInt Bytes)
-  (2d-string<-rows (ll1/string ll1-lines string)))
-(def (2d-string<-rows rows) ;; : (List String) -> (Vector-Tuple UInt UInt String)
+(def (parse-2d-map string) ;; : String -> (Vector-Tuple UInt UInt Bytes)
+  (2d-map<-rows (ll1/string ll1-lines string)))
+(def (make-2d-map X Y (V (make-u8vector (* X Y) 0))) (vector X Y V))
+(def (2d-map<-rows rows) ;; : (List String) -> (Vector-Tuple UInt UInt String)
   (def n-rows (length rows))
   (check-argument-positive-integer n-rows)
   (def n-cols (string-length (first rows)))
   (check-argument-positive-integer n-cols)
   (check-argument (andmap (lambda (row) (equal? (string-length row) n-cols)) rows)
                   "equal length rows" string)
-  (vector n-cols n-rows (u8vector-concatenate (map string->bytes rows))))
+  (make-2d-map n-cols n-rows (u8vector-concatenate (map string->bytes rows))))
 (def (i<-xy x y X Y) (+ x (* y X)))
 (def (xy<-i i X Y) (defvalues (y x) (floor/ i X)) (values x y))
 (def (xy? v x y)
   (with ((vector X Y V) v)
     (and (exact-integer? x) (< -1 x X) (exact-integer? y) (< -1 y Y))))
+(def (i<-p p X Y) (i<-xy (car p) (cdr p) X Y))
+(def (p<-i i X Y) (defvalues (x y) (xy<-i i X Y)) (cons x y))
 (def (xyp? v p) (with ([x . y] p) (xy? v x y)))
 (def (xyget v x y)
   (and (xy? v x y) (with ((vector X Y V) v) (u8vector-ref V (i<-xy x y X Y)))))
 (def (xygetc v x y) (alet (i (xyget v x y)) (integer->char i)))
 (def (pget v p) (xyget v (car p) (cdr p)))
 (def (pgetc v p) (xygetc v (car p) (cdr p)))
+(def (xycopy m) (with ((vector X Y V) m) (vector X Y (u8vector-copy V))))
 ;; Day 3 Iterators -- in lieu of a data structure
 (def (d3-for-each-number fun v)
   (with ((vector X Y V) v)
@@ -222,17 +262,17 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
       (let loop ((xstart 0))
         (when (< xstart X)
           (if (char-ascii-digit (xygetc v xstart y))
-            (let* ((xendy (string-index V (lambda (x) (not (char-ascii-digit x)))
-                                        (1+ (i<-xy xstart y X Y)) (i<-xy X y X Y)))
+            (let* ((xendy (u8vector-index V (lambda (x) (not (codepoint-ascii-digit x)))
+                                          (1+ (i<-xy xstart y X Y)) (i<-xy X y X Y)))
                    (xend (if xendy (- xendy (i<-xy 0 y X Y)) X))
-                   (n (string->number (substring V (i<-xy xstart y X Y) (i<-xy xend y X Y)))))
+                   (n (string->number (bytes->string (subu8vector V (i<-xy xstart y X Y) (i<-xy xend y X Y))))))
               (fun n xstart xend y)
               (loop (1+ xend)))
             (loop (1+ xstart))))))))
 (def (part-symbol? x)
   (and (char? x) (not (or (eqv? x #\.) (char-ascii-digit x)))))
 (def (d3-for-each-adjacent-symbol fun v xstart xend y)
-  (with ((vector X Y V) v)
+  (with ((vector X Y _) v)
     (def (c gx gy)
       (let (g (xygetc v gx gy))
         (when (part-symbol? g)
@@ -248,7 +288,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
     (d3-for-each-adjacent-symbol (lambda _ (return #t)) v xstart xend y)
     #f))
 (def (day3.1 input)
-  (def v (parse-2d-string input))
+  (def v (parse-2d-map input))
   (def sum 0)
   (def (process-num n xstart xend y)
     (when (has-adjacent-symbol? v xstart xend y)
@@ -257,7 +297,7 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
   sum)
 ;; Day 3 Part 2
 (def (day3.2 input)
-  (def v (parse-2d-string input))
+  (def v (parse-2d-map input))
   (def stars (hash))
   (def (process-num n xstart xend y)
     (def (process-symbol g gx gy)
@@ -785,6 +825,12 @@ XXX = (XXX, XXX)")
 (def (char->wind c) (string-index wind-chars c))
 (def (winds->bits ws) (+/list (map (cut fxshift 1 <>) ws)))
 (def (bits->winds b) (filter (cut bit-set? <> b) (iota 4)))
+(defrules for-each-wind ()
+  ((_ (w wbits) body ...)
+   (let (f (lambda (w) (when (fxbit-set? w wbits) body ...)))
+     (f 0) (f 1) (f 2) (f 3)))
+  ((_ (w) body ...)
+   (let (f (lambda (w) body ...)) (f 0) (f 1) (f 2) (f 3))))
 (def wind-xy #((0 . -1) (0 . 1) (1 . 0) (-1 . 0)))
 (def (wind->xy w (n 1)) (*xy n (vector-ref wind-xy w)))
 (def (-wind wind) (bitwise-xor wind 1))
@@ -799,7 +845,7 @@ XXX = (XXX, XXX)")
   (find (lambda (w) (has-connection? v (pos+wind p w) (-wind w))) winds))
 (def (day10* v f)
   (with ((vector X Y s) v)
-    (defvalues (x y) (xy<-i (string-index s #\S) X Y))
+    (defvalues (x y) (xy<-i (u8vector-index s (char->integer #\S)) X Y))
     (def pos (cons x y))
     (def wind (find-wind v pos (iota 4)))
     (let loop ((pos pos) (wind wind) (sum 0))
@@ -850,13 +896,13 @@ L---JF-JLJ.||-FJLJJ7
 L.L7LFJ|||||FJL7||LJ
 L7JLJL-JLJLJL--JLJ.L")
 (def (day10 (input (day-input-string 10)))
-  (def example1 (parse-2d-string day10-example1))
+  (def example1 (parse-2d-map day10-example1))
   (check (day10.1 example1) => 8)
-  (def example2.1 (parse-2d-string day10-example2.1))
+  (def example2.1 (parse-2d-map day10-example2.1))
   (check (day10.2 example2.1) => 4)
-  (def example2.2 (parse-2d-string day10-example2.2))
+  (def example2.2 (parse-2d-map day10-example2.2))
   (check (day10.2 example2.2) => 10)
-  (def pipes (parse-2d-string input))
+  (def pipes (parse-2d-map input))
   [(day10.1 pipes) (day10.2 pipes)])
 
 
@@ -898,11 +944,11 @@ L7JLJL-JLJLJL--JLJ.L")
 .......#..
 #...#.....")
 (def (day11 (input (day-input-string 11)))
-  (def example (parse-2d-string day11-example))
+  (def example (parse-2d-map day11-example))
   (check (day11* example) => 374)
   (check (day11* example 10) => 1030)
   (check (day11* example 100) => 8410)
-  (def pipes (parse-2d-string input))
+  (def pipes (parse-2d-map input))
   [(day11* pipes) (day11* pipes 1000000)])
 
 
@@ -1045,7 +1091,7 @@ L7JLJL-JLJLJL--JLJ.L")
               (ll1-repeated (ll1-begin0 (ll1-char+ ".#") ll1-eolf) ll1-eolf)
               ll1-eof))
 (def (d13-parse string)
-  (map 2d-string<-rows (ll1/string ll1-d13 string)))
+  (map 2d-map<-rows (ll1/string ll1-d13 string)))
 (def (xyset! v x y b)
   (with ((vector X Y V) v)
     (check-argument (and (exact-integer? x) (< -1 x X)) "in range" [x X])
@@ -1055,11 +1101,15 @@ L7JLJL-JLJLJL--JLJ.L")
     (check-argument (< -1 b 256) "u8" b)
     (set! (u8vector-ref V i) b)))
 (def (xysetc! v x y c) (xyset! v x y (char->integer c)))
+(def (pset! v p b) (xyset! v (car p) (cdr p) b))
+(def (psetc! v p c) (pset! v p (char->integer c)))
 (def xygetc-set! xysetc!)
 (def xyget-set! xyset!)
-(def (transpose-2d-string v)
+(def pget-set! pset!)
+(def pgetc-set! psetc!)
+(def (transpose-2d-map v)
   (with ((vector X Y s) v)
-    (def w (vector Y X (make-u8vector (* X Y) 0)))
+    (def w (make-2d-map Y X))
     (for (x (in-range X)) (for (y (in-range Y)) (set! (xygetc w y x) (xygetc v x y))))
     w))
 (def (vertical-symmetry? r m (smudges 0))
@@ -1081,7 +1131,7 @@ L7JLJL-JLJLJL--JLJ.L")
 (def (summarize-symmetry m (smudges 0))
   (let (x (summarize-vertical-symmetry m smudges))
     (if (positive? x) x
-        (* 100 (summarize-vertical-symmetry (transpose-2d-string m) smudges)))))
+        (* 100 (summarize-vertical-symmetry (transpose-2d-map m) smudges)))))
 (def (day13.1 maps)
   (+/list (map summarize-symmetry maps)))
 (def (day13.2 maps)
@@ -1139,7 +1189,7 @@ L7JLJL-JLJLJL--JLJ.L")
     l))
 (def (rotate-clockwise m)
   (with ((vector X Y s) m)
-    (def n (vector Y X (make-u8vector (* X Y) 0)))
+    (def n (make-2d-map Y X))
     (for (x (in-range X)) (for (y (in-range Y)) (xysetc! n (- Y y 1) x (xygetc m x y))))
     n))
 (def (cycle14 m)
@@ -1166,7 +1216,7 @@ L7JLJL-JLJLJL--JLJ.L")
                 (hash-put! h m i)
                 (for-each display [" " i])
                 (loop (1+ i) (cycle14 m)))))))))
-(def (print-2d-string m (port (current-output-port)))
+(def (print-2d-map m (port (current-output-port)))
   (with ((vector X Y s) m)
     (for (y (in-range Y))
       (let* ((start (i<-xy 0 y X Y)) (end (+ start X)))
@@ -1227,18 +1277,18 @@ O..#.OO...
 #...O###.O
 #.OOO#...O")
 (def (day14 (input (day-input-string 14)))
-  (def example (parse-2d-string day14-example))
-  (def example.N (parse-2d-string day14-example.N))
+  (def example (parse-2d-map day14-example))
+  (def example.N (parse-2d-map day14-example.N))
   (check (tiltN example) => example.N)
   (check (day14.1 example) => 136)
-  (def example.1 (parse-2d-string day14-example.1))
-  (def example.2 (parse-2d-string day14-example.2))
-  (def example.3 (parse-2d-string day14-example.3))
+  (def example.1 (parse-2d-map day14-example.1))
+  (def example.2 (parse-2d-map day14-example.2))
+  (def example.3 (parse-2d-map day14-example.3))
   (check (cycle14 example) => example.1)
   (check (cycle14 example.1) => example.2)
   (check (cycle14 example.2) => example.3)
   (check (day14.2 example) => 64)
-  (def m (parse-2d-string input))
+  (def m (parse-2d-map input))
   [(day14.1 m) (day14.2 m)]) ;; 107430 96317
 
 ;;; DAY 15 https://adventofcode.com/2023/day/15 -- simple 1960s data processing
@@ -1294,7 +1344,7 @@ O..#.OO...
           (+ r (fxshift (winds->bits os) (fxshift i 2))))))))
 (def (d16next wind char)
   (def charnexts (vector-ref d16table (string-index d16chars char)))
-  (bits->winds (clear-bit-field 1 wind (extract-bit-field 4 (fxshift wind 2) charnexts))))
+  (fxbit-clear wind (extract-bit-field 4 (fxshift wind 2) charnexts)))
 (def (d16step m head lit c)
   (with ((vector X Y _) m)
     (with ([w x . y] head)
@@ -1305,13 +1355,13 @@ O..#.OO...
               (let (nextpos (pos+wind [x . y] wind))
                 (when (xyp? m nextpos)
                   (c (cons (-wind wind) nextpos))))
-              (set! windmask (bitwise-ior windmask (fxshift 1 wind)))))
-          (for-each go (d16next w (xygetc m x y)))
+              (set! windmask (fxbit-set wind windmask))))
+          (for-each-wind (next (d16next w (xygetc m x y))) (go next))
           (xyset! lit x y (bitwise-ior (xyget lit x y) windmask)))))))
 (def (d16* m init)
   (with ((vector X Y s) m)
-    (def t (make-u8vector (* X Y) 0))
-    (def lit (vector X Y t))
+    (def lit (make-2d-map X Y))
+    (def t (vector-ref lit 2))
     (def (litN) (for/fold (sum 0) ((i (iota (* X Y))))
                   (if (zero? (u8vector-ref t i)) sum (1+ sum))))
     (let loop ((heads [init]))
@@ -1340,12 +1390,11 @@ O..#.OO...
 .|....-|.\\
 ..//.|....")
 (def (day16 (input (day-input-string 16)))
-  (def ex (parse-2d-string d16-ex))
+  (def ex (parse-2d-map d16-ex))
   (check (d16.1 ex) => 46)
   (check (d16.2 ex) => 51)
-  (def m (parse-2d-string input))
+  (def m (parse-2d-map input))
   [(d16.1 m) (d16.2 m)])
-
 
 ;;; DAY 17 https://adventofcode.com/2023/day/17 -- A* search (best first search)
 ;;; Phase space is (direction . position)
@@ -1368,12 +1417,12 @@ O..#.OO...
          (go r) (go l))))))
 (def (d17* m minsteps maxsteps)
   (with ((vector X Y _) m)
-    (car (A* starts: '((0 (0 0 . 0)) ;; cost 0 so far, heading North, at NW corner.
-                       (0 (3 0 . 0))) ;; cost 0 so far, heading West, at NW corner.
-             ends: `((0 (1 ,(1- X) . ,(1- Y))) ;; cost 0 so far, heading South, at SE corner.
-                     (0 (2 ,(1- X) . ,(1- Y)))) ;; cost 0 so far, heading East, at SE corner.
-             +arcs: (cut d17arcs m minsteps maxsteps #t <>)
-             -arcs: (cut d17arcs m minsteps maxsteps #f <>)))))
+    (car (A*2 starts: '((0 (0 0 . 0)) ;; cost 0 so far, heading North, at NW corner.
+                        (0 (3 0 . 0))) ;; cost 0 so far, heading West, at NW corner.
+              ends: `((0 (1 ,(1- X) . ,(1- Y))) ;; cost 0 so far, heading South, at SE corner.
+                      (0 (2 ,(1- X) . ,(1- Y)))) ;; cost 0 so far, heading East, at SE corner.
+              +arcs: (cut d17arcs m minsteps maxsteps #t <>)
+              -arcs: (cut d17arcs m minsteps maxsteps #f <>)))))
 (def (d17.1 m) (d17* m 1 3))
 (def (d17.2 m) (d17* m 4 10))
 (def d17ex1 "\
@@ -1397,12 +1446,12 @@ O..#.OO...
 999999999991
 999999999991")
 (def (day17 (input (day-input-string 17)))
-  (def ex1 (parse-2d-string d17ex1))
+  (def ex1 (parse-2d-map d17ex1))
   (check (d17.1 ex1) => 102)
   (check (d17.2 ex1) => 94)
-  (def ex2 (parse-2d-string d17ex2))
+  (def ex2 (parse-2d-map d17ex2))
   (check (d17.2 ex2) => 71)
-  (def m (parse-2d-string input))
+  (def m (parse-2d-map input))
   [(d17.1 m) (d17.2 m)]) ;; 959 1135
 
 ;;; DAY 18 https://adventofcode.com/2023/day/18 -- Green's Theorem, again (see Day 10)
@@ -1578,7 +1627,8 @@ hdj{m>838:A,pv}
   (def by-name (hash))
   (def (name->index name) (if-let (m (hash-get by-name name)) (module-index m) -1))
   (def (register-module name)
-    (alet (tos (hash-get h name))
+    (alet (tos (or (hash-get h name)
+                   (and (eq? name 'rx) '(#\=))))
       (with ([type . outputs] tos)
         (def i (evector-fill-pointer c))
         (def m (module name i type '() outputs #f #f))
@@ -1621,7 +1671,8 @@ hdj{m>838:A,pv}
                                   -1))))
                         (module-out-modules m))))
                    ms)
-  [v ms])
+  (def rx (alet (m (hash-get by-name 'rx)) (module-index m)))
+  [v ms rx])
 (def low-pulse 1)
 (def high-pulse 0)
 (def (low-pulse? hl) (= hl 1))
@@ -1632,7 +1683,7 @@ hdj{m>838:A,pv}
 (def flipflop-off low-pulse)
 (def flipflop-on high-pulse)
 (def flipflop-toggle pulse-not)
-(def (d20run ms state (counts (vector 0 0)))
+(def (d20run ms state (counts (vector 0 0)) (watch #f))
   (def q (make-queue))
   (def (signal hl mm vv)
     (enqueue! q (vector hl mm vv))
@@ -1640,6 +1691,7 @@ hdj{m>838:A,pv}
   (signal low-pulse 0 -1) ;; push the button!
   (until (queue-empty? q)
     (with ((vector hl mi vi) (dequeue! q)) ;; hi/lo signal, module index, state var index (or -1)
+      (when watch (watch hl mi))
       ;;(DBG r0: hl mi vi)
       (unless (= mi -1)
         (let (m (vector-ref ms mi))
@@ -1682,9 +1734,8 @@ hdj{m>838:A,pv}
   (for (j (iota v))
     (display (if (bit-set? j bits) #\- #\+)))
   (newline))
-
 (def (d20run* circuit (N 1000))
-  (with ([v ms] (d20prepare circuit))
+  (with ([v ms _] (d20prepare circuit))
     ;;(DBG d20.1: v ms)
     (def state (bits->ebits -1 v)) ;; start all low / off
     (def counts (vector 0 0))
@@ -1715,6 +1766,13 @@ hdj{m>838:A,pv}
 (def (d20.1 circuit)
   (with ([(vector h l) . _] (d20run* circuit 1000)) (* h l)))
 ;; Day 20 Part 2
+;; TODO: reduction to a DAG of strongly connected components,
+;; then analysis of eventual periodicity in each component, using Day 8?
+(def (d20.2 circuit)
+  (with ([v ms rx] (d20prepare circuit))
+    (DBG 20200 v ms rx)
+    (void)))
+;; Day 20 Redux
 (def d20ex1 "\
 broadcaster -> a, b, c
 %a -> b
@@ -1732,17 +1790,334 @@ broadcaster -> a
   (def ex2 (d20parse d20ex2))
   (check (d20.1 ex1) => 32000000)
   (check (d20.1 ex2) => 11687500)
-  #;(check (d20.2 ex1) => x)
   (def circuit (d20parse input))
-  (d20.1 circuit)
-  #;[(d20.1 circuit) #;(d20.2 circuit)])
+  [(d20.1 circuit) (d20.2 circuit)]) ;; 617708918033885 too high
+
+
+;;; DAY 21 https://adventofcode.com/2123/day/21 -- Distance
+(def (d21parse p)
+  (def m (parse-2d-map p))
+  (with ((vector X Y V) m)
+    (defvalues (x y) (xy<-i (string-index (bytes->string V) #\S) X Y))
+    (xysetc! m x y #\.)
+    (list x y m)))
+;; DAY 21 Part 1 -- Easy
+(def (d21.1 m (steps 64))
+  (with ([x y v] m)
+    (let loop ((i steps) (l [[x . y]]))
+      (if (zero? i) (length l)
+          (let ((u (xycopy v)))
+            (loop (1- i) (with-list-builder (c)
+                           (for (xy l)
+                             (for-each-wind (w)
+                               (let (p (pos+wind xy w))
+                                 (when (eqv? (pgetc u p) #\.)
+                                   (psetc! u p #\O)
+                                   (c p))))))))))))
+;; Day 21 Part 2 --
+;; 1. Notice that all borders are clear. Akshully, also horizontal and vertical axes from S.
+;;    This enables many simplifications (just rotate the puzzle to put it in [0 . 0])
+;; 2. If a point is reachable in N-2 steps then it is reachable in N steps.
+;;    If a point is reachable in N steps then it is reachable in N+2k steps for any natural k.
+;; 3. If a point is outside the first square, the shortest path goes through the border;
+;;    If the square is not aligned, a shortest goes through the incoming corner.
+;;    If the axes are clear, if it's aligned a shortest path goes through the intersection
+;;    of the axis and its square. If they aren't clear, extra complexity for aligned squares:
+;;    have to find for each x and each y the shortest path across to each other x or y,
+;;    and for big enough N the shortest path will go through a clear path most of the way;
+;;    compute minimal distances for K aligned blocks until distances vary in arithmetic sequence.
+;;    [That's trivial in the case of clear axes.]
+;; 4. Given a large N, and a matrix of distances in the 2x2 copies centered in S,
+;;    plus the 4 matrix of distances aligned blocks with for K < N,
+;;    for each point on the map, add up the number of copies that are reachable
+;;    in each aligned and unaligned quadrant.
+(def (shift-map v dx dy)
+  (with ((vector X Y _) v)
+    (def w (make-2d-map X Y))
+    (for (x (iota X))
+      (for (y (iota Y))
+        (xyset! w (modulo (+ x dx) X) (modulo (+ y dy) Y) (xyget v x y))))
+    w))
+(def (join-map-we w e)
+  (with ((vector Xw Yw _) w)
+    (with ((vector Xe Ye _) e)
+      (assert! (= Yw Ye))
+      (def j (make-2d-map (+ Xw Xe) Yw))
+      (for (y (iota Yw))
+        (for (x (iota Xw)) (xyset! j x y (xyget w x y)))
+        (for (x (iota Xe)) (xyset! j (+ x Xw) y (xyget e x y))))
+      j)))
+(def (join-map-ns n s)
+  (with ((vector Xn Yn _) n)
+    (with ((vector Xs Ys _) s)
+      (assert! (= Xn Xs))
+      (def j (make-2d-map Xn (+ Yn Ys)))
+      (for (x (iota Xn))
+        (for (y (iota Yn)) (xyset! j x y (xyget n x y)))
+        (for (y (iota Ys)) (xyset! j x (+ y Yn) (xyget s x y))))
+      j)))
+(def (d21.2 xym (iterations 26501365))
+  (defvalues (xs ys m) (list->values xym))
+  (def X (vector-ref m 0))
+  (def Y (vector-ref m 1))
+  (assert! (= X Y))
+  (for (x (iota X))
+    (when (> iterations 5000)
+      (assert! (eqv? #\. (xygetc m x ys))))
+    (assert! (eqv? #\. (xygetc m x 0)))
+    (assert! (eqv? #\. (xygetc m x (1- Y)))))
+  (for (y (iota Y))
+    (when (> iterations 5000)
+      (assert! (eqv? #\. (xygetc m xs y))))
+    (assert! (eqv? #\. (xygetc m 0 y)))
+    (assert! (eqv? #\. (xygetc m (1- X) y))))
+  (def ms (shift-map m (- xs) (- ys)))
+  ;;(print-2d-map ms)
+  (def ms2 (join-map-we ms ms))
+  (def ms4 (join-map-ns ms2 ms2))
+  (print-2d-map ms4)
+  (def 2X (* 2 X))
+  (def 2Y (* 2 Y))
+  (def dists (make-vector (* 2X 2Y) #f))
+  (def (dist-get x y) (vector-ref dists (i<-xy x y 2X 2Y)))
+  (def (ensure-dist p d)
+    (let* ((i (i<-p p 2X 2Y))
+           (dist (vector-ref dists i)))
+      (if dist [dist]
+          (let (v (d))
+            ;;(DBG ed: p v)
+            (vector-set! dists i (car v)) v))))
+  (def (arcs p) (with-list-builder (c)
+                  (for-each-wind (w)
+                    (let (q (pos+wind p w))
+                      (when (eqv? (pgetc ms4 q) #\.)
+                        ;;(DBG arcs: p q)
+                        (c [1 . q]))))))
+  (A* starts: [[0 [X . Y]]] arcs: arcs bests: ensure-dist)
+  ;;(DBG d: dists)
+  (def r 0)
+  (for (x (iota 2X))
+    (for (y (iota 2Y))
+      (alet (d (dist-get x y))
+        (let ((i (- iterations d)))
+          (when (and (<= 0 i) (even? i))
+            (let (n (floor-quotient i X))
+              (increment! r (half (* (+ n 1) (+ n 2))))))))))
+  r)
+;; Day 21 Redux
+(def d21ex "\
+...........
+.....###.#.
+.###.##..#.
+..#.#...#..
+....#.#....
+.##..S####.
+.##..#...#.
+.......##..
+.##.#.####.
+.##..##.##.
+...........")
+(def (day21 (input (day-input-string 21)))
+  (def ex (d21parse d21ex))
+  (check (d21.1 ex 6) => 16)
+  (check (d21.2 ex 6) => 16)
+  (check (d21.2 ex 10) => 50)
+#|  (check (d21.2 ex 100) => 6536)
+  (check (d21.2 ex 500) => 167004)
+  (check (d21.2 ex 1000) => 668697)
+  (check (d21.2 ex 5000) => 16733044)|# ;; TODO
+  (def m (d21parse input))
+  [(d21.1 m) (d21.2 m)]) ;; (3733 ?) ;; 617708918033885 ??
+
+
+;;; DAY 22 https://adventofcode.com/2223/day/22 -- Simplified Tetris
+(def ll1-d22line
+  (ll1-list (ll1-begin0 ll1-uint (ll1-char #\,))
+            (ll1-begin0 ll1-uint (ll1-char #\,))
+            (ll1-begin0 ll1-uint (ll1-char #\~))
+            (ll1-begin0 ll1-uint (ll1-char #\,))
+            (ll1-begin0 ll1-uint (ll1-char #\,))
+            (ll1-begin0 ll1-uint ll1-eolf)))
+(def (d22parse t)
+  (ll1/string (ll1-repeated ll1-d22line ll1-eof) t))
+;; DAY 22 Part 1 --
+(def (brick-min-xyz b)
+  (with ([x1 y1 z1 x2 y2 z2] b)
+    [(min z1 z2) (min x1 x2) (min y1 y2)]))
+(def (brick-xyz< b1 b2)
+  (lexicographic<? < (brick-min-xyz b1) (brick-min-xyz b2)))
+(def (d22.1 m)
+  (def N (length m))
+  (def X (1+ (foldl max 0 (map (match <> ([x1 _ _ x2 _ _] (max x1 x2))) m))))
+  (def Y (1+ (foldl max 0 (map (match <> ([_ y1 _ _ y2 _] (max y1 y2))) m))))
+  (def Z (1+ (foldl max 0 (map (match <> ([_ _ z1 _ _ z2] (max z1 z2))) m))))
+  (def H (make-vector (* X Y) [0 . #f]))
+  (def (h xy) (vector-ref H (i<-p xy X Y)))
+  (def (h-set! xy a) (vector-set! H (i<-p xy X Y) a))
+  (def sup (make-vector N '()))
+  (def pus (make-vector N '()))
+  (def s (map cons (iota (length m)) (sort m brick-xyz<)))
+  ;;(DBG 22100 N X Y Z H sup pus s)
+  (def (bottom p)
+    (match p
+      ([n x1 y1 z1 x2 y2 z2]
+       (cond
+        ((not (= x1 x2)) (values z1 (map (lambda (x) [x . y1]) (iota (1+ (abs (- x1 x2))) (min x1 x2)))))
+        ((not (= y1 y2)) (values z1 (map (lambda (y) [x1 . y]) (iota (1+ (abs (- y1 y2))) (min y1 y2)))))
+        ((not (= z1 z2)) (values (min z1 z2) [[x1 . y1]]))
+        (else (values z1 [[x1 . y1]])))))) ;; all equal: single cube
+  (def (drop p)
+    (defvalues (z l) (bottom p))
+    (def z0 0)
+    (def supports '())
+    (for (q l)
+      (with ([zq . bq] (h q))
+        (cond
+         ((> zq z0)
+          (set! z0 zq)
+          (set! supports (when/list bq [bq])))
+         ((= zq z0)
+          (when bq (pushnew! bq supports))))))
+    (with ([b x y z1 _ _ z2] p)
+      (set! (vector-ref sup b) supports)
+      (let (dz (- z z0 1))
+        (assert! (<= 0 dz))
+        (if (= z1 z2)
+          (let (nz (- z dz)) (for (q l) (set! (h q) [nz . b])))
+          (set! (h [x . y]) [(- (max z1 z2) dz) . b])))))
+  (for-each drop s)
+  (for (i (iota N))
+    (for (j (vector-ref sup i))
+      (pushnew! i (vector-ref pus j))))
+  (vector-count (lambda (supported) (andmap (lambda (s) (length>n? (vector-ref sup s) 1)) supported)) pus))
+;; Day 22 Part 2 --
+;; Day 22 Redux
+(def d22ex "\
+1,0,1~1,2,1
+0,0,2~2,0,2
+0,2,3~2,2,3
+0,0,4~0,2,4
+2,0,5~2,2,5
+0,1,6~2,1,6
+1,1,8~1,1,9")
+(def (day22 (input (day-input-string 22)))
+  (def ex (d22parse d22ex))
+  (check (d22.1 ex) => 5)
+  (def m (d22parse input))
+  [(d22.1 m) #;(d22.2 m)]) ;; 403
+
+
+;;; DAY 23 https://adventofcode.com/2323/day/23 -- Longest Path
+;; Use A* after transforming longest into smallest for some metric
+;; involving negative offsets from some upper bound?
+(def wind-arrows "^v><") ;; arrow for wind blowing TOWARDS given direction
+(def (wind->arrow w) (string-ref wind-arrows w))
+(def (arrow->wind a) (string-index wind-arrows a))
+(def (d23parse m23)
+  (def m (parse-2d-map m23))
+  (defvalues (X Y V) (vector->values m))
+  (def maxY (1- Y))
+  (def start-x (let/cc return (for (x (iota X)) (when (eqv? #\. (xygetc m x 0)) (return x)))))
+  (def end-x (let/cc return (for (x (iota X)) (when (eqv? #\. (xygetc m x maxY)) (return x)))))
+  (def nodes (list->evector []))
+  (def h (hash))
+  (def (add-node! p)
+    (def i (evector-fill-pointer nodes))
+    (hash-put! h p i)
+    (evector-push! nodes (vector [] [] i p)) ;; remember i and p for debugging reasons only
+    i)
+  (def start (cons start-x 0))
+  (def end (cons start-x maxY))
+  (for-each add-node! [start end])
+  (def (add-path! start-node end-node len)
+    (let (sn (evector-ref nodes start-node)) (push! (cons end-node len) (vector-ref sn 0)))
+    (let (en (evector-ref nodes end-node)) (push! (cons start-node len) (vector-ref en 1))))
+  (def (orig-winds pos)
+    (let ((o 0)
+          (a (arrow->wind (pgetc m pos))))
+      (for-each-wind (w)
+        (when (and (not (eqv? w a))
+                   (alet (c (pgetc m (pos+wind pos w)))
+                     (not (or (eqv? c #\#)
+                              (alet (fw (arrow->wind c))
+                                (not (eqv? fw (-wind w))))))))
+          (set! o (fxbit-set w o))))
+      o))
+  (def (dest-winds pos)
+    (let ((o 0)
+          (a (arrow->wind (pgetc m pos))))
+      (for-each-wind (w)
+        (when (and (or (not a) (eqv? w a))
+                   (alet (c (pgetc m (pos+wind pos w)))
+                     (or (eqv? c #\.)
+                         (alet (tw (arrow->wind c))
+                           (not (eqv? tw (-wind w)))))))
+          (set! o (fxbit-set w o))))
+      o))
+  ;; Search paths: from current point to next point with more than one choice.
+  (def (search-paths start-node pos wind len)
+    (if-let (end-node (hash-get h pos))
+      ;; found a path to a known node, add it and stop.
+      (add-path! start-node end-node len)
+      ;; new position, examine its destinations
+      (let* ((dests (dest-winds pos))
+             (allowed-dests (fxbit-clear (-wind wind) dests)))
+        ;; stop (without successful result) at dead ends
+        (unless (fxzero? allowed-dests)
+          (let (origs (orig-winds pos))
+            (if (fx< 2 (bit-count (fxior origs dests))) ;; found new node!
+                (let (node (add-node! pos))
+                  (add-path! start-node node len)
+                  (for-each-wind (w dests) (search-paths node (pos+wind pos w) w 1)))
+                (let (w (fxfirst-set-bit allowed-dests))
+                  (search-paths start-node (pos+wind pos w) w (1+ len)))))))))
+  ;; From the start node and position, head Southward with 1 step.
+  (search-paths 0 start 1 1)
+  (evector->vector nodes))
+;; DAY 23 Part 1 --
+(def (d23.1 m)
+  m)
+;; Day 23 Part 2 --
+;; Day 23 Redux
+(def d23ex "\
+#.#####################
+#.......#########...###
+#######.#########.#.###
+###.....#.>.>.###.#.###
+###v#####.#v#.###.#.###
+###.>...#.#.#.....#...#
+###v###.#.#.#########.#
+###...#.#.#.......#...#
+#####.#.#.#######.#.###
+#.....#.#.#.......#...#
+#.#####.#.#.#########v#
+#.#...#...#...###...>.#
+#.#.#v#######v###.###v#
+#...#.>.#...>.>.#.###.#
+#####v#.#.###v#.#.###.#
+#.....#...#...#.#.#...#
+#.#########.###.#.#.###
+#...###...#...#...#.###
+###.###.#.###v#####v###
+#...#...#.#.>.>.#.>.###
+#.###.###.#.###.#.#v###
+#.....###...###...#...#
+#####################.#")
+(def (day23 (input (day-input-string 23)))
+  (def ex (d23parse d23ex))
+  ;;(check (d23.1 ex) => 5)
+  (def m (d23parse input))
+  ;;[(d23.1 m) #;(d23.2 m)]
+  [(d23.1 ex) (d23.1 m)])
 
 (def (main . _)
   (nest
-   ;; (time)
+   (time)
    (writeln)
-   #;(let (r (PeekableStringReader (open-buffered-string-reader d20ex)))
-       (try (ll1-d20rule r) (catch (e) (displayln e) ((ll1-char* char?) r))))
-   (day20)))
+   #;(let (r (PeekableStringReader (open-buffered-string-reader d23ex)))
+       (try (ll1-d23rule r) (catch (e) (displayln e) ((ll1-char* char?) r))))
+   (day16)))
 
 (main)
+
+;;; Apporter la Livebox + son alimentation a la boutique Orange la plus proche avec code 116 895 267
