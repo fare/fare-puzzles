@@ -11,6 +11,7 @@
   :std/iter
   :std/misc/alist
   :std/misc/bytes
+  :std/misc/dag
   :std/misc/evector
   :std/misc/func
   :std/misc/hash
@@ -88,6 +89,8 @@
       u8vector-index criterion))))
 (defrule (fxbit-clear bit bitmask) (##fxandc2 bitmask (fxshift 1 bit)))
 (defrule (fxbit-set bit bitmask) (##fxior bitmask (fxshift 1 bit)))
+(def (bit-clear bit bitmask) (bit-field-clear bitmask bit (1+ bit)))
+(def (bit-set bit bitmask) (bit-field-set bitmask bit (1+ bit)))
 
 ;;; DAY 1 https://adventofcode.com/2023/day/1 -- simple string search
 (def digit-names #("zero" "one" "two" "three" "four" "five" "six" "seven" "eight" "nine"))
@@ -241,19 +244,19 @@ Game 5: 6 red, 1 blue, 3 green; 2 blue, 1 red, 2 green")
   (check-argument (andmap (lambda (row) (equal? (string-length row) n-cols)) rows)
                   "equal length rows" string)
   (make-2d-map n-cols n-rows (u8vector-concatenate (map string->bytes rows))))
-(def (i<-xy x y X Y) (+ x (* y X)))
-(def (xy<-i i X Y) (defvalues (y x) (floor/ i X)) (values x y))
-(def (xy? v x y)
+(defrule (i<-xy x y X Y) (+ x (* y X)))
+(defrule (xy<-i i X Y) (let-values (((y x) (floor/ i X))) (values x y)))
+(defrule (xy? v x y)
   (with ((vector X Y V) v)
     (and (exact-integer? x) (< -1 x X) (exact-integer? y) (< -1 y Y))))
-(def (i<-p p X Y) (i<-xy (car p) (cdr p) X Y))
-(def (p<-i i X Y) (defvalues (x y) (xy<-i i X Y)) (cons x y))
-(def (xyp? v p) (with ([x . y] p) (xy? v x y)))
-(def (xyget v x y)
+(defrule (i<-p p X Y) (i<-xy (car p) (cdr p) X Y))
+(defrule (p<-i i X Y) (let-values (((x y) (xy<-i i X Y))) (cons x y)))
+(defrule (xyp? v p) (with ([x . y] p) (xy? v x y)))
+(defrule (xyget v x y)
   (and (xy? v x y) (with ((vector X Y V) v) (u8vector-ref V (i<-xy x y X Y)))))
-(def (xygetc v x y) (alet (i (xyget v x y)) (integer->char i)))
-(def (pget v p) (xyget v (car p) (cdr p)))
-(def (pgetc v p) (xygetc v (car p) (cdr p)))
+(defrule (xygetc v x y) (alet (i (xyget v x y)) (integer->char i)))
+(defrule (pget v p) (xyget v (car p) (cdr p)))
+(defrule (pgetc v p) (xygetc v (car p) (cdr p)))
 (def (xycopy m) (with ((vector X Y V) m) (vector X Y (u8vector-copy V))))
 ;; Day 3 Iterators -- in lieu of a data structure
 (def (d3-for-each-number fun v)
@@ -823,14 +826,14 @@ XXX = (XXX, XXX)")
 (def wind-names #(North South East West)) ;; 0 1 2 3
 (def wind-chars "NSEW") ;; 0 1 2 3
 (def (char->wind c) (string-index wind-chars c))
-(def (winds->bits ws) (+/list (map (cut fxshift 1 <>) ws)))
-(def (bits->winds b) (filter (cut bit-set? <> b) (iota 4)))
 (defrules for-each-wind ()
   ((_ (w wbits) body ...)
    (let (f (lambda (w) (when (fxbit-set? w wbits) body ...)))
      (f 0) (f 1) (f 2) (f 3)))
   ((_ (w) body ...)
    (let (f (lambda (w) body ...)) (f 0) (f 1) (f 2) (f 3))))
+(def (winds->bits ws) (+/list (map (cut fxshift 1 <>) ws)))
+(def (bits->winds b) (filter (cut fxbit-set? <> b) (iota 4)))
 (def wind-xy #((0 . -1) (0 . 1) (1 . 0) (-1 . 0)))
 (def (wind->xy w (n 1)) (*xy n (vector-ref wind-xy w)))
 (def (-wind wind) (bitwise-xor wind 1))
@@ -1348,15 +1351,16 @@ O..#.OO...
 (def (d16step m head lit c)
   (with ((vector X Y _) m)
     (with ([w x . y] head)
-      (unless (bit-set? w (xyget lit x y))
-        (let ((windmask (arithmetic-shift 1 w)))
+      (unless (fxbit-set? w (xyget lit x y))
+        (let ((windmask (fxshift 1 w)))
           (def (go wind)
-            (unless (bit-set? wind (xyget lit x y))
+            (unless (fxbit-set? wind (xyget lit x y))
               (let (nextpos (pos+wind [x . y] wind))
                 (when (xyp? m nextpos)
                   (c (cons (-wind wind) nextpos))))
               (set! windmask (fxbit-set wind windmask))))
-          (for-each-wind (next (d16next w (xygetc m x y))) (go next))
+          ;;(for-each-wind (next (d16next w (xygetc m x y))) (go next))
+          (for-each go (bits->winds (d16next w (xygetc m x y))))
           (xyset! lit x y (bitwise-ior (xyget lit x y) windmask)))))))
 (def (d16* m init)
   (with ((vector X Y s) m)
@@ -1946,17 +1950,17 @@ broadcaster -> a
     [(min z1 z2) (min x1 x2) (min y1 y2)]))
 (def (brick-xyz< b1 b2)
   (lexicographic<? < (brick-min-xyz b1) (brick-min-xyz b2)))
-(def (d22.1 m)
-  (def N (length m))
+(def (brick-dag m)
+  (def N (1+ (length m)))
   (def X (1+ (foldl max 0 (map (match <> ([x1 _ _ x2 _ _] (max x1 x2))) m))))
   (def Y (1+ (foldl max 0 (map (match <> ([_ y1 _ _ y2 _] (max y1 y2))) m))))
   (def Z (1+ (foldl max 0 (map (match <> ([_ _ z1 _ _ z2] (max z1 z2))) m))))
-  (def H (make-vector (* X Y) [0 . #f]))
+  (def H (make-vector (* X Y) [0 . 0]))
   (def (h xy) (vector-ref H (i<-p xy X Y)))
   (def (h-set! xy a) (vector-set! H (i<-p xy X Y) a))
-  (def sup (make-vector N '()))
-  (def pus (make-vector N '()))
-  (def s (map cons (iota (length m)) (sort m brick-xyz<)))
+  (def sup (make-vector N '())) ;; for each brick i, the list of bricks that support it.
+  (def pus (make-vector N '())) ;; for each brick i, the list of bricks that it supports
+  (def s (map cons (iota (length m) 1) (sort m brick-xyz<)))
   ;;(DBG 22100 N X Y Z H sup pus s)
   (def (bottom p)
     (match p
@@ -1969,7 +1973,7 @@ broadcaster -> a
   (def (drop p)
     (defvalues (z l) (bottom p))
     (def z0 0)
-    (def supports '())
+    (def supports '(0))
     (for (q l)
       (with ([zq . bq] (h q))
         (cond
@@ -1989,7 +1993,56 @@ broadcaster -> a
   (for (i (iota N))
     (for (j (vector-ref sup i))
       (pushnew! i (vector-ref pus j))))
+  (values N sup pus))
+(def (d22.1 m)
+  (defvalues (N sup pus) (brick-dag m))
   (vector-count (lambda (supported) (andmap (lambda (s) (length>n? (vector-ref sup s) 1)) supported)) pus))
+(def (bit->mask n) (arithmetic-shift 1 n))
+(def (bits->mask l) (+/list (map bit->mask l)))
+(def (mask-fold f s m)
+  (let loop ((a s) (o 0) (m m))
+    (let (x (first-set-bit m))
+      (if (negative? x) a (let (b (+ o x)) (loop (f b a) (1+ b) (arithmetic-shift m (- -1 x))))))))
+(def (mask->bits m) (mask-fold cons [] m))
+(def (d22.2 m)
+  (defvalues (N sup pus) (brick-dag m))
+  ;; topologically renumber so a supports b implies a > b, base plate is now (1- N)
+  (def o->n (make-vector N 0)) ;; old to new
+  (def n->o (make-vector N 0)) ;; new to old
+  (def n 0)
+  (walk-dag (cut <> 0)
+            arrows: (cut vector-ref pus <>)
+            synthetic-attribute: (lambda (o _ _)
+                                   (set! (vector-ref o->n o) n)
+                                   (set! (vector-ref n->o n) o)
+                                   (increment! n)))
+  (def nsup (make-vector N '()))
+  (def npus (make-vector N '()))
+  (for (n (iota N))
+    (let (o (vector-ref n->o n))
+      (set! (vector-ref nsup n) (map (cut vector-ref o->n <>) (vector-ref sup o)))
+      (set! (vector-ref npus n) (map (cut vector-ref o->n <>) (vector-ref pus o)))))
+  (def disintegrated (make-vector N 0))
+  (def weakened (make-vector N 0))
+  (for (n (iota N))
+    (let loop ((disintegrated* (bit->mask n))
+               (weakened* (bits->mask (vector-ref npus n)))
+               (cursor n))
+      (let (target (1- (integer-length (extract-bit-field cursor 0 weakened*)))) ;; next weakened brick
+        (cond
+         ((negative? target) ;; done
+          (set! (vector-ref disintegrated n) disintegrated*)
+          (set! (vector-ref weakened n) weakened*))
+         ((andmap (lambda (s) (bit-set? s disintegrated*)) (vector-ref nsup target)) ;; chain reaction!
+          (let (dis (bitwise-ior disintegrated* (vector-ref disintegrated target)))
+            (loop dis
+                  (bitwise-andc1 dis (bitwise-ior weakened* (vector-ref weakened target)))
+                  target)))
+         (else
+          (loop disintegrated*
+                weakened*
+                target))))))
+  (foldl max 0 (map (lambda (n) (bit-count (vector-ref disintegrated n))) (iota (1- N)))))
 ;; Day 22 Part 2 --
 ;; Day 22 Redux
 (def d22ex "\
@@ -2003,13 +2056,12 @@ broadcaster -> a
 (def (day22 (input (day-input-string 22)))
   (def ex (d22parse d22ex))
   (check (d22.1 ex) => 5)
+  (check (d22.2 ex) => 7)
   (def m (d22parse input))
-  [(d22.1 m) #;(d22.2 m)]) ;; 403
+  [(d22.1 m) (d22.2 m)]) ;; 403 1152
 
 
-;;; DAY 23 https://adventofcode.com/2323/day/23 -- Longest Path
-;; Use A* after transforming longest into smallest for some metric
-;; involving negative offsets from some upper bound?
+;;; DAY 23 https://adventofcode.com/2323/day/23 -- (Build and) Walk a DAG
 (def wind-arrows "^v><") ;; arrow for wind blowing TOWARDS given direction
 (def (wind->arrow w) (string-ref wind-arrows w))
 (def (arrow->wind a) (string-index wind-arrows a))
@@ -2027,7 +2079,7 @@ broadcaster -> a
     (evector-push! nodes (vector [] [] i p)) ;; remember i and p for debugging reasons only
     i)
   (def start (cons start-x 0))
-  (def end (cons start-x maxY))
+  (def end (cons end-x maxY))
   (for-each add-node! [start end])
   (def (add-path! start-node end-node len)
     (let (sn (evector-ref nodes start-node)) (push! (cons end-node len) (vector-ref sn 0)))
@@ -2072,11 +2124,16 @@ broadcaster -> a
                 (let (w (fxfirst-set-bit allowed-dests))
                   (search-paths start-node (pos+wind pos w) w (1+ len)))))))))
   ;; From the start node and position, head Southward with 1 step.
-  (search-paths 0 start 1 1)
+  (search-paths 0 (pos+wind start 1) 1 1)
   (evector->vector nodes))
-;; DAY 23 Part 1 --
-(def (d23.1 m)
-  m)
+;; DAY 23 Part 1 -- The graph better be a dag
+(def (d23.1 nodes)
+  (walk-dag (cut <> 0)
+            arrows: (lambda (n) (vector-ref (vector-ref nodes n) 0))
+            arrow-target: car
+            synthetic-attribute:
+            (lambda (_ arrs lens)
+              (foldl max 0 (map (lambda (a l) (+ (cdr a) l)) arrs lens)))))
 ;; Day 23 Part 2 --
 ;; Day 23 Redux
 (def d23ex "\
@@ -2110,14 +2167,67 @@ broadcaster -> a
   ;;[(d23.1 m) #;(d23.2 m)]
   [(d23.1 ex) (d23.1 m)])
 
+
+;;; DAY 24 https://adventofcode.com/2424/day/24 -- Intersections
+(def ll1-d24hailstone
+  (ll1-list (ll1-begin0 ll1-uint (ll1-string ",") (ll1-char* " "))
+            (ll1-begin0 ll1-uint (ll1-string ",") (ll1-char* " "))
+            (ll1-begin0 ll1-uint (ll1-string " @") (ll1-char* " "))
+            (ll1-begin0 ll1-sint (ll1-string ",") (ll1-char* " "))
+            (ll1-begin0 ll1-sint (ll1-string ",") (ll1-char* " "))
+            (ll1-begin0 ll1-sint ll1-eolf)))
+(def (d24parse hail)
+  (list->vector (ll1/string (ll1-repeated ll1-d24hailstone ll1-eof) hail)))
+;; DAY 24 Part 1
+(def (hail-intersect? hail1 hail2 minXY maxXY)
+  (with ([x10 y10 _ vx1 vy1 _] hail1)
+    (with ([x20 y20 _ vx2 vy2 _] hail2)
+      ;; intersection: x = x10 + vx1*t1 = x20 + vx2*t2     (vx1 -vx2) (t1) = (x20-x10)
+      ;;               y = y10 + vy1*t1 = y20 + vy2*t2     (vy1 -vy2) (t2)   (y20-y10)
+      ;; d = -vx1*vy2+vy1*vx2
+      ;; t1 = (-vy2*(x20-x10) + vx2*(y20-y10))/d
+      ;; t2 = (-vy1*(x20-x10) + vx1*(y20-y10))/d
+      (let/cc return
+        (let* ((d (- (* vy1 vx2) (* vx1 vy2)))
+               (_d (when (zero? d) (return #f)))
+               (t1 (/ (+ (* vy2 (- x10 x20)) (* vx2 (- y20 y10))) d))
+               (_t1 (when (negative? t1) (return #f)))
+               (t2 (/ (+ (* vy1 (- x10 x20)) (* vx1 (- y20 y10))) d))
+               (_t2 (when (negative? t2) (return #f)))
+               (x (+ x10 (* vx1 t1)))
+               (_x (unless (<= minXY x maxXY) (return #f)))
+               (y (+ y10 (* vy1 t1)))
+               (_y (unless (<= minXY y maxXY) (return #f)))
+               #;(_ (DBG hi: hail1 hail2 d t1 t2 x y)))
+          #t)))))
+(def (d24.1 hail (minXY 200000000000000) (maxXY 400000000000000))
+  (def N (vector-length hail))
+  (def c 0)
+  (for (i (in-range N))
+    (for (j (in-range (1+ i) N))
+      (when (hail-intersect? (vector-ref hail i) (vector-ref hail j) minXY maxXY)
+        (increment! c))))
+  c)
+;; Day 24 Part 2 --
+;; Day 24 Redux
+(def d24ex "\
+19, 13, 30 @ -2,  1, -2
+18, 19, 22 @ -1, -1, -2
+20, 25, 34 @ -2, -2, -4
+12, 31, 28 @ -1, -2, -1
+20, 19, 15 @  1, -5, -3")
+(def (day24 (input (day-input-string 24)))
+  (def ex (d24parse d24ex))
+  (check (d24.1 ex 7 27) => 2)
+  (def m (d24parse input))
+  [(d24.1 m)]) ;; (24192)
+
 (def (main . _)
   (nest
    (time)
    (writeln)
-   #;(let (r (PeekableStringReader (open-buffered-string-reader d23ex)))
-       (try (ll1-d23rule r) (catch (e) (displayln e) ((ll1-char* char?) r))))
-   (day16)))
+   #;(let (r (PeekableStringReader (open-buffered-string-reader d24ex)))
+       (try (ll1-d24rule r) (catch (e) (displayln e) ((ll1-char* char?) r))))
+   (day24)))
 
 (main)
-
-;;; Apporter la Livebox + son alimentation a la boutique Orange la plus proche avec code 116 895 267
